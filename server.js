@@ -1,7 +1,8 @@
 const express=require('express');const cors=require('cors');const jwt=require('jsonwebtoken');const path=require('path');const crypto=require('crypto');const twilio=require('twilio');const {Pool}=require('pg');const multer=require('multer');const helmet=require('helmet');const rateLimit=require('express-rate-limit');const webpush=require('web-push');require('dotenv').config();
 const app=express();const PORT=process.env.PORT||3000;const JWT_SECRET=process.env.JWT_SECRET;
-if(!JWT_SECRET && process.env.NODE_ENV==='production'){throw new Error('JWT_SECRET is required in production');}
+// For hosted demos, allow startup without a configured JWT secret. Set JWT_SECRET in Render for persistent production sessions.
 const SIGNING_SECRET=JWT_SECRET||crypto.randomBytes(32).toString('hex');
+if(!JWT_SECRET) console.warn('WARNING: JWT_SECRET is not configured. A temporary signing secret is being used; sessions reset after restart.');
 app.set('trust proxy',1);
 const allowedOrigins=(process.env.ALLOWED_ORIGINS||'').split(',').map(x=>x.trim()).filter(Boolean);
 app.use(helmet({contentSecurityPolicy:false,referrerPolicy:{policy:'no-referrer'},crossOriginEmbedderPolicy:false}));
