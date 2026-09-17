@@ -1,3 +1,112 @@
--- ObuasiGo production schema. The server also auto-creates these tables on startup.
--- Run this in Supabase SQL Editor if you prefer to provision manually.
 create extension if not exists pgcrypto;
+
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  phone text unique not null,
+  email text,
+  full_name text,
+  role text not null default 'customer' check (role in ('customer','rider','vendor','hotel','admin','superadmin')),
+  status text not null default 'active',
+  verified boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists role_applications (
+  id uuid primary key default gen_random_uuid(),
+  phone text not null references users(phone) on delete cascade,
+  requested_role text not null check (requested_role in ('rider','vendor','hotel')),
+  business_name text,
+  notes text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
+create table if not exists orders (
+  id text primary key,
+  customer_phone text not null references users(phone),
+  vendor text not null,
+  items jsonb not null default '[]',
+  total numeric(12,2) not null default 0,
+  currency text not null default 'GHS',
+  status text not null default 'PAYMENT PENDING',
+  rider_phone text references users(phone),
+  pickup_code text not null default '4821',
+  delivery_pin text not null default '7392',
+  delivery_address jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists bookings (
+  id text primary key,
+  customer_phone text not null references users(phone),
+  hotel text not null,
+  room text not null,
+  total numeric(12,2) not null default 0,
+  currency text not null default 'GHS',
+  status text not null default 'BOOKED',
+  check_in date,
+  check_out date,
+  guests integer not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists payments (
+  tx_ref text primary key,
+  user_phone text references users(phone),
+  entity_type text not null,
+  entity_id text not null,
+  amount numeric(12,2) not null,
+  currency text not null default 'GHS',
+  status text not null default 'pending',
+  provider text not null default 'flutterwave',
+  transaction_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists tracking_points (
+  id bigserial primary key,
+  order_id text not null references orders(id) on delete cascade,
+  rider_phone text not null references users(phone),
+  lat double precision not null,
+  lng double precision not null,
+  accuracy double precision,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists documents (
+  id uuid primary key default gen_random_uuid(),
+  user_phone text not null references users(phone) on delete cascade,
+  doc_type text not null,
+  file_url text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_phone text not null references users(phone) on delete cascade,
+  endpoint text unique not null,
+  subscription jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists audit_logs (
+  id bigserial primary key,
+  actor text not null,
+  action text not null,
+  entity_type text,
+  entity_id text,
+  meta jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists orders_customer_idx on orders(customer_phone, created_at desc);
+create index if not exists orders_rider_idx on orders(rider_phone, updated_at desc);
+create index if not exists tracking_order_idx on tracking_points(order_id, created_at desc);
+create index if not exists documents_status_idx on documents(status, created_at asc);

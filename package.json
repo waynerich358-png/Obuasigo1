@@ -19,5 +19,8 @@
     "ws": "^8.18.3",
     "web-push": "^3.6.7",
     "@supabase/supabase-js": "^2.57.4"
+  },
+  "engines": {
+    "node": ">=24.14.1 <25"
   }
 }
