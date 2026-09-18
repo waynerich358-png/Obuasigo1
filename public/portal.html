@@ -27,6 +27,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eef2f0}
 th{color:#6d7b74;font-size:12px;text-transform:uppercase}
 .warn{background:#fff4e0;color:#7a4b00;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
+.err{background:#fdecec;color:#8a2020;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
 .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px}
 .role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer}
 .role .em{font-size:42px}
@@ -49,27 +50,16 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
     <div class="card" style="text-align:center">
       <span class="badge">SECURE STAFF ACCESS</span>
       <h1 style="margin:10px 0">Staff sign in</h1>
-      <p class="muted">Tap your role to sign in instantly.</p>
+      <p class="muted">Tap your role to sign in.</p>
       <div class="roles">
-        <div class="role" onclick="quickLogin('+233241111111')"><div class="em">🛡️</div><b>Admin</b><small>Full overview</small></div>
-        <div class="role" onclick="quickLogin('+233242222222')"><div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small></div>
-        <div class="role" onclick="quickLogin('+233243333333')"><div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small></div>
+        <div class="role" onclick="quickLogin('+233241111111','admin')"><div class="em">🛡️</div><b>Admin</b><small>Full overview</small></div>
+        <div class="role" onclick="quickLogin('+233242222222','vendor')"><div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small></div>
+        <div class="role" onclick="quickLogin('+233243333333','hotel')"><div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small></div>
       </div>
       <div id="status" class="status" style="display:none"></div>
-      <hr style="border:0;border-top:1px solid #eef2f0;margin:20px 0">
-      <details>
-        <summary style="cursor:pointer;color:#6d7b74;font-size:13px">Sign in with a different number</summary>
-        <div style="margin-top:14px;text-align:left">
-          <label>Phone number</label>
-          <input class="input" id="phone" placeholder="+233241234567">
-          <button class="btn wide" id="sendBtn" onclick="sendOtp()">Send code</button>
-          <div id="otpStep" class="hidden" style="margin-top:14px">
-            <label>6-digit code</label>
-            <input class="input" id="code" placeholder="123456" maxlength="6">
-            <button class="btn wide" onclick="verifyOtp()">Verify</button>
-          </div>
-        </div>
-      </details>
+      <div style="margin-top:14px">
+        <button class="btn sec" onclick="seedRoles()">🔧 Fix demo roles (run once)</button>
+      </div>
     </div>
   </div>
 
@@ -120,40 +110,27 @@ function playBeep(){
   } catch(e){}
 }
 
-async function quickLogin(phone){
-  setStatus('Sending code to ' + phone + '...');
+async function seedRoles(){
+  try {
+    await api('/dev/seed-roles', { method:'POST' });
+    setStatus('✓ Roles seeded. Now tap a role card to sign in.');
+  } catch(e){ setStatus('Seed failed: ' + e.message); }
+}
+
+async function quickLogin(phone, expectedRole){
+  setStatus('Signing in as ' + expectedRole + '...');
   try {
     var a = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
-    if (!a.devOtp){ setStatus('OTP sent'); $('phone').value = phone; $('otpStep').classList.remove('hidden'); return; }
-    setStatus('Verifying...');
+    if (!a.devOtp){ setStatus('OTP sent'); return; }
     var b = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: a.devOtp }) });
     state.token = b.token; state.user = b.user;
     localStorage.setItem('obg_staff_token', b.token);
-    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){ setStatus('Not a staff account: ' + b.user.role); return; }
+    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){
+      setStatus('⚠ This number is registered as "' + b.user.role + '". Tap "Fix demo roles" first.');
+      return;
+    }
     enter();
   } catch(e){ setStatus('Error: ' + e.message); }
-}
-
-async function sendOtp(){
-  var phone = $('phone').value.trim();
-  $('sendBtn').disabled = true;
-  try {
-    var d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
-    $('otpStep').classList.remove('hidden');
-    if (d.devOtp){ $('code').value = d.devOtp; setStatus('Dev OTP: ' + d.devOtp); }
-    else setStatus('Code sent');
-  } catch(e){ setStatus(e.message); }
-  $('sendBtn').disabled = false;
-}
-async function verifyOtp(){
-  var phone = $('phone').value.trim(); var code = $('code').value.trim();
-  try {
-    var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
-    state.token = d.token; state.user = d.user;
-    localStorage.setItem('obg_staff_token', d.token);
-    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1){ setStatus('Not a staff account'); return; }
-    enter();
-  } catch(e){ setStatus(e.message); }
 }
 
 function enter(){
@@ -170,7 +147,7 @@ function startPolling(){
   if (window._poll) clearInterval(window._poll);
   window._poll = setInterval(function(){
     if ($('dash').classList.contains('hidden')) return;
-    if (state.user && state.user.role === 'vendor') render();
+    if (state.user && ['vendor','hotel','admin','superadmin'].indexOf(state.user.role) !== -1) render();
   }, 5000);
 }
 
@@ -185,7 +162,7 @@ function signOut(){
 async function render(){
   var role = state.user.role;
   var box = $('body');
-  box.innerHTML = '<div class="card"><p class="muted">Loading...</p></div>';
+  box.innerHTML = '<div class="card"><p class="muted">Loading ' + role + ' dashboard...</p></div>';
 
   if (role === 'admin' || role === 'superadmin'){
     var o = await api('/portal/overview').catch(function(){ return {}; });
@@ -195,15 +172,17 @@ async function render(){
       '<div class="mg">'
       + '<div class="m">Customers<b>' + (o.customers || 0) + '</b></div>'
       + '<div class="m">Riders<b>' + (o.riders || 0) + '</b></div>'
+      + '<div class="m">Vendors<b>' + (o.vendors || 0) + '</b></div>'
+      + '<div class="m">Hotels<b>' + (o.hotels || 0) + '</b></div>'
       + '<div class="m">Orders<b>' + (o.orders || 0) + '</b></div>'
-      + '<div class="m">Revenue<b>' + money(o.revenue || 0) + '</b></div>'
       + '<div class="m">Bookings<b>' + (o.bookings || 0) + '</b></div>'
+      + '<div class="m">Revenue<b>' + money(o.revenue || 0) + '</b></div>'
       + '<div class="m">Checked-in<b>' + (o.checkedIn || 0) + '</b></div>'
       + '</div>'
-      + '<div class="card"><h3 style="margin-top:0">Recent orders</h3>'
+      + '<div class="card"><h3 style="margin-top:0">All orders</h3>'
       + (orders.length ?
           '<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>'
-          + orders.slice(0, 20).map(function(x){
+          + orders.slice(0, 25).map(function(x){
               return '<tr><td>#' + esc(x.id) + '</td><td>' + esc(x.vendor) + '</td><td>' + esc(x.customer_phone) + '</td><td>' + money(x.total) + '</td><td><span class="badge">' + esc(x.status) + '</span></td></tr>';
             }).join('')
           + '</tbody></table>'
@@ -225,17 +204,20 @@ async function render(){
     if (vendorOrders.length > lastOrderCount && lastOrderCount > 0) playBeep();
     lastOrderCount = vendorOrders.length;
 
+    var pending = vendorOrders.filter(function(x){ return ['Order created','Payment confirmed'].indexOf(x.status) !== -1; }).length;
+    
     box.innerHTML =
       '<div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or PINs.</div>'
+      + (pending > 0 ? '<div class="err">🔔 ' + pending + ' new order(s) waiting for your approval!</div>' : '')
       + '<div class="card"><h3 style="margin-top:0">Incoming orders (' + vendorOrders.length + ')</h3>'
       + (vendorOrders.length ? vendorOrders.map(function(x){
           var s = x.status;
           var buttons = '';
           if (s === 'Order created' || s === 'Payment confirmed'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ Accept order</button>'
-                    + '<button class="btn danger" style="width:100%;margin-top:8px" onclick="rejectOrder(\'' + esc(x.id) + '\')">✕ Reject order</button>';
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ ACCEPT ORDER</button>'
+                    + '<button class="btn danger" style="width:100%;margin-top:8px" onclick="rejectOrder(\'' + esc(x.id) + '\')">✕ Reject</button>';
           } else if (s === 'Restaurant accepted'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Mark food ready</button>'
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Food is ready</button>'
                     + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR</button>';
           } else if (s === 'Food ready'){
             buttons = '<div class="badge gold" style="margin-top:10px;display:inline-block">Waiting for rider…</div>'
@@ -248,7 +230,7 @@ async function render(){
           var note = x.note ? '<div style="background:#fff4e0;border-radius:8px;padding:8px;margin-top:8px;font-size:13px"><b>📝 Customer note:</b> ' + esc(x.note) + '</div>' : '';
           return '<div style="border-bottom:1px solid #eef2f0;padding:14px 0">'
             + '<div style="display:flex;justify-content:space-between"><b>#' + esc(x.id) + '</b><span class="badge gold">' + esc(s) + '</span></div>'
-            + (x.rider_phone ? '<div class="muted" style="margin-top:4px">Rider: ' + esc(x.rider_phone) + '</div>' : '<div class="muted" style="margin-top:4px">No rider yet</div>')
+            + (x.rider_phone ? '<div class="muted" style="margin-top:4px">🛵 Rider: ' + esc(x.rider_phone) + '</div>' : '<div class="muted" style="margin-top:4px">No rider yet</div>')
             + '<table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>'
             + x.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty * i.price) + '</td></tr>'; }).join('')
             + '</tbody></table>'
@@ -267,11 +249,11 @@ async function render(){
       + '<div class="card" style="text-align:center">'
       + '<a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>'
       + '</div>'
-      + '<div class="card"><h3 style="margin-top:0">Bookings</h3>'
+      + '<div class="card"><h3 style="margin-top:0">Bookings (' + hotelBookings.length + ')</h3>'
       + (hotelBookings.length ?
-          '<table><thead><tr><th>ID</th><th>Room</th><th>Stay</th><th>Code</th><th>Status</th></tr></thead><tbody>'
+          '<table><thead><tr><th>ID</th><th>Guest</th><th>Room</th><th>Code</th><th>Status</th></tr></thead><tbody>'
           + hotelBookings.map(function(b){
-              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.room) + '</td><td>' + esc(b.check_in || '') + ' → ' + esc(b.check_out || '') + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
+              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.customer_phone) + '</td><td>' + esc(b.room) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
             }).join('')
           + '</tbody></table>'
           : '<p class="muted">No bookings yet.</p>')
@@ -320,6 +302,7 @@ async function showPickupQR(id){
   api('/me').then(function(d){
     state.user = d.user;
     if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) !== -1) enter();
+    else localStorage.removeItem('obg_staff_token');
   }).catch(function(){});
 })();
 </script>
