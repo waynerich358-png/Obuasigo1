@@ -162,15 +162,25 @@ function audit(actor, action, type, id, meta) {
 }
 
 app.get('/api/health', function(req, res) {
-  res.json({
-    ok: true,
-    service: 'ObuasiGo API',
-    database: pool ? 'postgres' : 'memory',
-    otp: twilioOk ? 'twilio-verify' : (process.env.DEV_OTP === 'true' ? 'development' : 'not-configured'),
-    payments: process.env.FLW_SECRET_KEY ? 'flutterwave' : 'not-configured',
-    push: process.env.VAPID_PUBLIC_KEY ? 'web-push' : 'not-configured',
-    time: new Date().toISOString()
-  });
+  res.json({ ok: true, service: 'ObuasiGo API', database: pool ? 'postgres' : 'memory', otp: twilioOk ? 'twilio' : (process.env.DEV_OTP === 'true' ? 'development' : 'not-configured'), time: new Date().toISOString() });
+});
+
+// One-time role seeding helper
+app.post('/api/dev/seed-roles', function(req, res) {
+  var seed = [
+    ['+233241111111', 'admin'],
+    ['+233242222222', 'vendor'],
+    ['+233243333333', 'hotel'],
+    ['+233244444444', 'rider']
+  ];
+  if (!pool) {
+    seed.forEach(function(pair){ mem.users.set(pair[0], { phone: pair[0], role: pair[1], verified: true }); });
+    return res.json({ ok: true, memory: true, seeded: seed.length });
+  }
+  Promise.all(seed.map(function(pair){
+    return q("insert into users(phone,role,verified) values($1,$2,true) on conflict(phone) do update set role=$2, verified=true", pair);
+  })).then(function(){ res.json({ ok: true, seeded: seed.length }); })
+    .catch(function(e){ res.status(500).json({ error: e.message }); });
 });
 
 app.post('/api/auth/request-otp', authLimiter, function(req, res) {
@@ -229,7 +239,7 @@ var CATALOG = {
         { id: 'i6', name: 'Margherita', price: 55, emoji: '🍕' },
         { id: 'i7', name: 'Garlic Bread', price: 20, emoji: '🥖' }
       ]},
-    { id: 'r3', name: 'Ashanti Chop Bar', emoji: '🥘', tags: 'Local food · Home style', eta: '20-30 min',
+    { id: 'r3', name: 'Ashanti Chop Bar', emoji: '🥘', tags: 'Local food', eta: '20-30 min',
       items: [
         { id: 'i8', name: 'Fufu + Light Soup', price: 34, emoji: '🥘' },
         { id: 'i9', name: 'Banku + Tilapia', price: 48, emoji: '🐟' },
@@ -244,11 +254,7 @@ var CATALOG = {
 
 app.get('/api/catalog', function(req, res){ res.json(CATALOG); });
 
-var ORDER_FLOW = [
-  'Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready',
-  'Rider assigned','Rider accepted','Rider arrived','Food picked up','Going to customer',
-  'Arrived at customer','Customer PIN verified','Completed'
-];
+var ORDER_FLOW = ['Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready','Rider assigned','Rider accepted','Rider arrived','Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'];
 
 function makeId(prefix, digits) {
   var n = digits || 5;
@@ -285,10 +291,8 @@ app.post('/api/orders', auth, function(req, res) {
   if (pool) {
     q("insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
       [order.id, order.customer_phone, order.customer_name, order.vendor, JSON.stringify(items), subtotal, deliveryFee, total, order.status, order.pickup_code, order.delivery_pin, JSON.stringify(order.delivery_address), order.note])
-      .then(function(){
-        audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
-        res.status(201).json(order);
-      }).catch(function(e){ res.status(500).json({ error: e.message }); });
+      .then(function(){ audit(req.user.phone, 'order.created', 'order', order.id, { total: total }); res.status(201).json(order); })
+      .catch(function(e){ res.status(500).json({ error: e.message }); });
     return;
   }
   mem.orders.set(order.id, order);
@@ -320,11 +324,32 @@ app.post('/api/orders/:id/pay', auth, function(req, res) {
   res.json(o);
 });
 
+app.post('/api/orders/:id/cancel', auth, function(req, res) {
+  var getOrder;
+  if (pool) getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
+  else getOrder = Promise.resolve(mem.orders.get(req.params.id));
+  getOrder.then(function(order){
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    var isOwner = order.customer_phone === req.user.phone;
+    var isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Not your order' });
+    var blocked = ['Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'];
+    if (blocked.indexOf(order.status) !== -1) return res.status(400).json({ error: 'Cannot cancel - food already on the way' });
+    if (pool) {
+      q("update orders set status='Cancelled by customer', updated_at=now() where id=$1 returning *", [order.id])
+        .then(function(r){ res.json(r[0]); });
+      return;
+    }
+    order.status = 'Cancelled by customer';
+    res.json(order);
+  });
+});
+
 // Vendor endpoints
 app.get('/api/vendor/orders', auth, roles('vendor','admin','superadmin'), function(req, res) {
   var vendorName = req.query.vendor || 'Obuasi Kitchen';
   if (pool) {
-    q("select * from orders where vendor=$1 order by created_at desc limit 50", [vendorName]).then(function(rows){ res.json(rows); });
+    q('select * from orders where vendor=$1 order by created_at desc limit 50', [vendorName]).then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
@@ -393,7 +418,7 @@ app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','
   }).catch(function(e){ res.status(500).json({ error: e.message }); });
 });
 
-// Rider endpoints
+// Rider workflow
 app.post('/api/orders/:id/rider-arrived', auth, roles('rider','admin','superadmin'), function(req, res) {
   if (pool) {
     q("update orders set status='Rider arrived', rider_phone=$1, updated_at=now() where id=$2 returning *", [req.user.phone, req.params.id])
@@ -506,13 +531,13 @@ app.post('/api/rider/verify-online', auth, roles('rider','admin','superadmin'), 
 app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.phone;
   if (pool) {
-    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status <> 'Completed' order by created_at desc", [phone])
+    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status not in ('Completed','Cancelled by customer','Rejected by vendor') order by created_at desc", [phone])
       .then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
   mem.orders.forEach(function(o){
-    if (o.status === 'Completed') return;
+    if (['Completed','Cancelled by customer','Rejected by vendor'].indexOf(o.status) !== -1) return;
     if (o.rider_phone === phone || ['Food ready','Restaurant accepted','Rider accepted','Rider arrived'].indexOf(o.status) !== -1) arr.push(o);
   });
   res.json(arr);
@@ -699,7 +724,6 @@ app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), funct
   });
 });
 
-// Portal
 app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
   if (pool) {
     Promise.all([
