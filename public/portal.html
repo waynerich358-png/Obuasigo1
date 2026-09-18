@@ -34,6 +34,11 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
 .role small{display:block;color:#6d7b74;font-size:12px;margin-top:4px}
 .hidden{display:none}
 .status{background:#eef4f1;color:#374b41;padding:10px 12px;border-radius:10px;font-size:13px;margin-top:10px;text-align:center}
+.qr-modal{position:fixed;inset: class0;="backgroundhidden:#000">
+c;   z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
+.qr-box{background:#fff;border-radius:20px;padding:22px;text-align:center;max-width:420px;width:100%}
+.qr-box img{width:100%;max-width:280px;margin:12px auto;display:block}
+.qr-code{font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:900;background:#f2f6f4;padding:10px;border-radius:12px;margin:8px 0}
 </style>
 </head>
 <body>
@@ -46,26 +51,19 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
       <span class="badge">SECURE STAFF ACCESS</span>
       <h1 style="margin:10px 0">Staff sign in</h1>
       <p class="muted">Tap your role below to sign in instantly.</p>
-
       <div class="roles">
-        <div class="role" onclick="quickLogin('+233241111111','admin')">
-          <div class="em">🛡️</div><b>Admin</b>
-          <small>Full overview</small>
+        <div class="role" onclick="quickLogin('+233241111111')">
+          <div class="em">🛡️</div><b>Admin</b><small>Full overview</small>
         </div>
-        <div class="role" onclick="quickLogin('+233242222222','vendor')">
-          <div class="em">🍽️</div><b>Vendor</b>
-          <small>Obuasi Kitchen</small>
+        <div class="role" onclick="quickLogin('+233242222222')">
+          <div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small>
         </div>
-        <div class="role" onclick="quickLogin('+233243333333','hotel')">
-          <div class="em">🏨</div><b>Hotel</b>
-          <small>Obuasi Royal Hotel</small>
+        <div class="role" onclick="quickLogin('+233243333333')">
+          <div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small>
         </div>
       </div>
-
       <div id="status" class="status" style="display:none"></div>
-
       <hr style="border:0;border-top:1px solid #eef2f0;margin:20px 0">
-
       <details>
         <summary style="cursor:pointer;color:#6d7b74;font-size:13px">Sign in with a different number</summary>
         <div style="margin-top:14px;text-align:left">
@@ -82,8 +80,7 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
     </div>
   </div>
 
-  <div id="dash" class="hidden">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+  <div id="dash" <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div>
         <span class="badge" id="roleBadge">—</span>
         <h2 id="title" style="margin:6px 0 0">—</h2>
@@ -98,73 +95,77 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
 </div>
 
 <script>
-const $ = id => document.getElementById(id);
-const state = { token:'', user:null };
-const money = n => 'GH₵' + Number(n||0).toFixed(2);
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+var $ = function(id){ return document.getElementById(id); };
+var state = { token:'', user:null };
 
-function authHeaders(){ return state.token ? { Authorization:'Bearer '+state.token } : {}; }
-async function api(path, opts={}){
-  const r = await fetch('/api'+path, { ...opts, headers:{ 'Content-Type':'application/json', ...authHeaders(), ...(opts.headers||{}) } });
-  const d = await r.json().catch(()=>({}));
+function money(n){ return 'GH\u20B5' + Number(n || 0).toFixed(2); }
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c];
+  });
+}
+function setStatus(msg){
+  var s = $('status'); s.style.display = 'block'; s.textContent = msg;
+}
+function authHeaders(){
+  return state.token ? { Authorization: 'Bearer ' + state.token } : {};
+}
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Content-Type':'application/json' }, authHeaders(), opts.headers || {});
+  var r = await fetch('/api' + path, opts);
+  var d = await r.json().catch(function(){ return {}; });
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
-function setStatus(msg){ const s = $('status'); s.style.display = 'block'; s.textContent = msg; }
 
-/* ---------- One-tap demo login ---------- */
-async function quickLogin(phone, expectedRole){
-  setStatus('Sending code to ' + phone + '…');
+async function quickLogin(phone){
+  setStatus('Sending code to ' + phone + '...');
   try {
-    const a = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
+    var a = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
     if (!a.devOtp){
-      setStatus('OTP sent. Enter it in the form below.');
+      setStatus('OTP sent. Enter it below.');
       $('phone').value = phone;
       $('otpStep').classList.remove('hidden');
       return;
     }
-    setStatus('Code received: ' + a.devOtp + ' · verifying…');
-
-    const b = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code: a.devOtp }) });
+    setStatus('Verifying...');
+    var b = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: a.devOtp }) });
     state.token = b.token;
     state.user = b.user;
     localStorage.setItem('obg_staff_token', b.token);
-
-    if (b.user.role === 'customer' && expectedRole !== 'customer'){
-      setStatus('⚠ This number is not a ' + expectedRole + ' yet. Its role is "' + b.user.role + '".');
-      return;
-    }
-    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){
-      setStatus('⚠ Role "' + b.user.role + '" cannot access the staff portal.');
+    
+    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1) {
+      setStatus('This number is not a staff account. Role: ' + b.user.role);
       return;
     }
     enter();
   } catch(e){
-    setStatus('⚠ ' + e.message);
+    setStatus('Error: ' + e.message);
   }
 }
 
-/* ---------- Manual OTP ---------- */
 async function sendOtp(){
-  const phone = $('phone').value.trim();
+  var phone = $('phone').value.trim();
   $('sendBtn').disabled = true;
   try {
-    const d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
+    var d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
     $('otpStep').classList.remove('hidden');
     if (d.devOtp){ $('code').value = d.devOtp; setStatus('Dev OTP: ' + d.devOtp); }
     else setStatus('Code sent');
   } catch(e){ setStatus(e.message); }
   $('sendBtn').disabled = false;
 }
+
 async function verifyOtp(){
-  const phone = $('phone').value.trim(), code = $('code').value.trim();
+  var phone = $('phone').value.trim();
+  var code = $('code').value.trim();
   try {
-    const d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code }) });
+    var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
     state.token = d.token; state.user = d.user;
     localStorage.setItem('obg_staff_token', d.token);
-    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1){
-      setStatus('Not a staff account: ' + d.user.role);
-      return;
+    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1) {
+      setStatus('Not a staff account: ' + d.user.role); return;
     }
     enter();
   } catch(e){ setStatus(e.message); }
@@ -173,14 +174,14 @@ async function verifyOtp(){
 function enter(){
   $('login').classList.add('hidden');
   $('dash').classList.remove('hidden');
-  const labels = { admin:'Administrator', superadmin:'Superadmin', vendor:'Vendor', hotel:'Hotel' };
+  var labels = { admin:'Administrator', superadmin:'Superadmin', vendor:'Vendor', hotel:'Hotel' };
   $('roleBadge').textContent = labels[state.user.role] || state.user.role;
   $('title').textContent = (labels[state.user.role] || state.user.role) + ' dashboard';
   render();
 }
 
 function signOut(){
-  state.token=''; state.user=null;
+  state.token = ''; state.user = null;
   localStorage.removeItem('obg_staff_token');
   $('dash').classList.add('hidden');
   $('login').classList.remove('hidden');
@@ -188,121 +189,135 @@ function signOut(){
 }
 
 async function render(){
-  const role = state.user.role;
-  const box = $('body');
-  box.innerHTML = '<div class="card"><p class="muted">Loading…</p></div>';
+  var role = state.user.role;
+  var box = $('body');
+  box.innerHTML = '<div class="card"><p class="muted">Loading...</p></div>';
 
   if (role === 'admin' || role === 'superadmin'){
-    const o = await api('/portal/overview').catch(()=>({}));
-    const orders = await api('/portal/orders').catch(()=>[]);
-    const bookings = await api('/portal/bookings').catch(()=>[]);
-    box.innerHTML = `
-      <div class="mg">
-        <div class="m">Customers<b>${o.customers||0}</b></div>
-        <div class="m">Riders<b>${o.riders||0}</b></div>
-        <div class="m">Orders<b>${o.orders||0}</b></div>
-        <div class="m">Revenue<b>${money(o.revenue||0)}</b></div>
-        <div class="m">Bookings<b>${o.bookings||0}</b></div>
-        <div class="m">Checked-in<b>${o.checkedIn||0}</b></div>
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">Recent orders</h3>
-        ${orders.length ? `<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>
-          ${orders.slice(0,20).map(o=>`<tr><td>#${esc(o.id)}</td><td>${esc(o.vendor)}</td><td>${esc(o.customer_phone)}</td><td>${money(o.total)}</td><td><span class="badge">${esc(o.status)}</span></td></tr>`).join('')}
-        </tbody></table>` : '<p class="muted">No orders yet.</p>'}
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">Hotel bookings</h3>
-        ${bookings.length ? `<table><thead><tr><th>ID</th><th>Hotel</th><th>Code</th><th>Status</th></tr></thead><tbody>
-          ${bookings.slice(0,20).map(b=>`<tr><td>#${esc(b.id)}</td><td>${esc(b.hotel)}</td><td style="font-family:monospace">${esc(b.checkin_code||'')}</td><td><span class="badge ${b.status==='CHECKED IN'?'':'gold'}">${esc(b.status)}</span></td></tr>`).join('')}
-        </tbody></table>` : '<p class="muted">No bookings yet.</p>'}
-      </div>`;
+    var o = await api('/portal/overview').catch(function(){ return {}; });
+    var orders = await api('/portal/orders').catch(function(){ return []; });
+    var bookings = await api('/portal/bookings').catch(function(){ return []; });
+    
+    box.innerHTML = 
+      '<div class="mg">'
+      + '<div class="m">Customers<b>' + (o.customers || 0) + '</b></div>'
+      + '<div class="m">Riders<b>' + (o.riders || 0) + '</b></div>'
+      + '<div class="m">Orders<b>' + (o.orders || 0) + '</b></div>'
+      + '<div class="m">Revenue<b>' + money(o.revenue || 0) + '</b></div>'
+      + '<div class="m">Bookings<b>' + (o.bookings || 0) + '</b></div>'
+      + '<div class="m">Checked-in<b>' + (o.checkedIn || 0) + '</b></div>'
+      + '</div>'
+      + '<div class="card"><h3 style="margin-top:0">Recent orders</h3>'
+      + (orders.length ? 
+          '<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>'
+          + orders.slice(0,20).map(function(x){
+              return '<tr><td>#' + esc(x.id) + '</td><td>' + esc(x.vendor) + '</td><td>' + esc(x.customer_phone) + '</td><td>' + money(x.total) + '</td><td><span class="badge">' + esc(x.status) + '</span></td></tr>';
+            }).join('')
+          + '</tbody></table>' 
+          : '<p class="muted">No orders yet.</p>')
+      + '</div>'
+      + '<div class="card"><h3 style="margin-top:0">Hotel bookings</h3>'
+      + (bookings.length ? 
+          '<table><thead><tr><th>ID</th><th>Hotel</th><th>Code</th><th>Status</th></tr></thead><tbody>'
+          + bookings.slice(0,20).map(function(b){
+              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.hotel) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
+            }).join('')
+          + '</tbody></table>' 
+          : '<p class="muted">No bookings yet.</p>')
+      + '</div>';
   }
 
   else if (role === 'vendor'){
-    const orders = await api('/portal/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(()=>[]);
-    box.innerHTML = `
-      <div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or delivery PINs.</div>
-      <div class="card">
-        <h3 style="margin-top:0">Incoming orders</h3>
-        ${orders.length ? orders.map(function(o){
-          const approved = !!o.pickup_token;
-          return '<div style="border-bottom:1px solid #eef2f0;padding:12px 0">'
-            + '<div style="display:flex;justify-content:space-between"><b>#' + esc(o.id) + '</b><span class="badge gold">' + esc(o.status) + '</span></div>'
+    var vendorOrders = await api('/portal/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(function(){ return []; });
+    
+    box.innerHTML = 
+      '<div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or PINs.</div>'
+      + '<div class="card"><h3 style="margin-top:0">Incoming orders</h3>'
+      + (vendorOrders.length ? vendorOrders.map(function(x){
+          var s = x.status;
+          var buttons = '';
+          
+          if (s === 'Order created' || s === 'Payment confirmed'){
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ Accept order</button>';
+          } else if (s === 'Restaurant accepted'){
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Mark food ready</button>'
+                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR for rider</button>';
+          } else if (s === 'Food ready'){
+            buttons = '<div class="badge gold" style="margin-top:10px;display:inline-block">Waiting for rider to arrive...</div>'
+                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR again</button>';
+          } else if (s === 'Rider accepted' || s === 'Rider arrived'){
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">📦 Hand food to rider</button>';
+          } else {
+            buttons = '<div class="badge" style="margin-top:10px;display:inline-block">' + esc(s) + '</div>';
+          }
+          
+          return '<div style="border-bottom:1px solid #eef2f0;padding:14px 0">'
+            + '<div style="display:flex;justify-content:space-between"><b>#' + esc(x.id) + '</b><span class="badge gold">' + esc(s) + '</span></div>'
+            + (x.rider_phone ? '<div class="muted" style="margin-top:4px">Rider: ' + esc(x.rider_phone) + '</div>' : '<div class="muted" style="margin-top:4px">No rider yet</div>')
             + '<table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>'
-            + o.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty*i.price) + '</td></tr>'; }).join('')
+            + x.items.map(function(i){
+                return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty * i.price) + '</td></tr>';
+              }).join('')
             + '</tbody></table>'
-            + '<div style="text-align:right;margin-top:6px"><b>Total: ' + money(o.total) + '</b></div>'
-            + (o.status === 'Order created' || o.status === 'Payment confirmed'
-                ? '<button class="btn" style="width:100%;margin-top:10px" onclick="approveOrder(\'' + esc(o.id) + '\')">✓ Approve & generate pickup QR</button>'
-                : '')
-            + (approved
-                ? '<button class="btn sec" style="width:100%;margin-top:10px" onclick="showPickupQR(\'' + esc(o.id) + '\')">📷 Show pickup QR (' + esc(o.pickup_token) + ')</button>'
-                : '')
+            + '<div style="text-align:right;margin-top:6px"><b>Total: ' + money(x.total) + '</b></div>'
+            + buttons
             + '</div>';
-        }).join('') : '<p class="muted">No incoming orders yet.</p>'}
-      </div>
-        <h3 style="margin-top:0">Incoming orders</h3>
-        ${orders.length ? orders.map(o=>`
-          <div style="border-bottom:1px solid #eef2f0;padding:12px 0">
-            <div style="display:flex;justify-content:space-between"><b>#${esc(o.id)}</b><span class="badge gold">${esc(o.status)}</span></div>
-            <table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>
-              ${o.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${money(i.qty*i.price)}</td></tr>`).join('')}
-            </tbody></table>
-            <div style="text-align:right;margin-top:6px"><b>Total: ${money(o.total)}</b></div>
-          </div>`).join('') : '<p class="muted">No incoming orders yet.</p>'}
-      </div>`;
+        }).join('') : '<p class="muted">No incoming orders yet.</p>')
+      + '</div>';
   }
 
   else if (role === 'hotel'){
-    const bookings = await api('/portal/bookings?hotel=' + encodeURIComponent('Obuasi Royal Hotel')).catch(()=>[]);
-    box.innerHTML = `
-      <div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>
-      <div class="card" style="text-align:center">
-        <a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">Bookings</h3>
-        ${bookings.length ? `<table><thead><tr><th>ID</th><th>Room</th><th>Stay</th><th>Code</th><th>Status</th></tr></thead><tbody>
-          ${bookings.map(b=>`<tr><td>#${esc(b.id)}</td><td>${esc(b.room)}</td><td>${esc(b.check_in||'')} → ${esc(b.check_out||'')}</td><td style="font-family:monospace">${esc(b.checkin_code||'')}</td><td><span class="badge ${b.status==='CHECKED IN'?'':'gold'}">${esc(b.status)}</span></td></tr>`).join('')}
-        </tbody></table>` : '<p class="muted">No bookings yet.</p>'}
-      </div>`;
+    var hotelBookings = await api('/portal/bookings?hotel=' + encodeURIComponent('Obuasi Royal Hotel')).catch(function(){ return []; });
+    
+    box.innerHTML = 
+      '<div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>'
+      + '<div class="card" style="text-align:center">'
+      + '<a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>'
+      + '</div>'
+      + '<div class="card"><h3 style="margin-top:0">Bookings</h3>'
+      + (hotelBookings.length ? 
+          '<table><thead><tr><th>ID</th><th>Room</th><th>Stay</th><th>Code</th><th>Status</th></tr></thead><tbody>'
+          + hotelBookings.map(function(b){
+              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.room) + '</td><td>' + esc(b.check_in || '') + ' → ' + esc(b.check_out || '') + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
+            }).join('')
+          + '</tbody></table>' 
+          : '<p class="muted">No bookings yet.</p>')
+      + '</div>';
   }
 }
 
-/* Restore session */
-async function approveOrder(id){
+async function vendorAction(id, action){
   try {
-    await api('/orders/' + id + '/vendor-approve', { method:'PATCH' });
-    setStatus && setStatus('Order approved ✓');
+    await api('/orders/' + id + '/' + action, { method:'POST' });
     render();
   } catch(e){ alert(e.message); }
 }
 
 async function showPickupQR(id){
   try {
-    const d = await api('/orders/' + id + '/pickup-qr');
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:999;display:flex;align-items:center;justify-content:center;padding:20px';
-    box.innerHTML =
-      '<div style="background:#fff;border-radius:20px;padding:22px;text-align:center;max-width:420px;width:100%;color:#10231a">'
-      + '<h2 style="margin:0 0 6px">Rider pickup QR</h2>'
-      + '<p style="color:#6d7b74;font-size:13px">Show this to the rider. They scan it or enter the code to confirm pickup.</p>'
-      + '<img src="' + d.png + '" style="width:100%;max-width:280px;margin:12px auto;display:block">'
-      + '<div style="font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:900;background:#f2f6f4;padding:10px;border-radius:12px;margin:8px 0">' + d.code + '</div>'
+    var d = await api('/orders/' + id + '/pickup-qr');
+    var overlay = document.createElement('div');
+    overlay.className = 'qr-modal';
+    overlay.innerHTML = 
+      '<div class="qr-box">'
+      + '<h2 style="margin:0 0 6px">Rider pickup</h2>'
+      + '<p class="muted" style="font-size:13px">Show this QR to the rider, or read the code aloud.</p>'
+      + '<img src="' + d.png + '" alt="Pickup QR">'
+      + '<div class="qr-code">' + d.code + '</div>'
       + '<button class="btn sec" style="width:100%;margin-top:12px" onclick="this.parentElement.parentElement.remove()">Close</button>'
       + '</div>';
-    document.body.appendChild(box);
+    document.body.appendChild(overlay);
   } catch(e){ alert(e.message); }
 }
+
 (function(){
-  const t = localStorage.getItem('obg_staff_token');
+  var t = localStorage.getItem('obg_staff_token');
   if (!t) return;
   state.token = t;
-  api('/me').then(d => {
+  api('/me').then(function(d){
     state.user = d.user;
     if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) !== -1) enter();
-  }).catch(()=>{});
+  }).catch(function(){});
 })();
 </script>
 </body>
