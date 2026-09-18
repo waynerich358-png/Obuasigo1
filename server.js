@@ -1,5 +1,5 @@
-// ObuasiGo server.js - safe for mobile paste
-// No template literals, no arrow functions, no nested backticks.
+// ObuasiGo server.js
+// Safe syntax: no template literals, no arrow functions, no backticks.
 
 var express = require('express');
 var cors = require('cors');
@@ -46,7 +46,7 @@ var authLimiter = rateLimit({ windowMs: 15*60*1000, max: 30, standardHeaders: tr
 app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'deny', index: false }));
 var upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6*1024*1024 } });
 
-// ---------------- Database ----------------
+// -------- Database --------
 
 var pool = null;
 if (process.env.DATABASE_URL) {
@@ -66,103 +66,35 @@ function initDb() {
     console.warn('No DATABASE_URL - running in memory mode.');
     return Promise.resolve();
   }
-
-  var sql = ''
-    + "create extension if not exists pgcrypto;"
-    + "create table if not exists users ("
-    + "id uuid primary key default gen_random_uuid(),"
-    + "phone text unique not null,"
-    + "email text,"
-    + "full_name text,"
-    + "role text default 'customer',"
-    + "verified boolean default false,"
-    + "status text default 'active',"
-    + "created_at timestamptz default now(),"
-    + "updated_at timestamptz default now()"
-    + ");"
-    + "create table if not exists orders ("
-    + "id text primary key,"
-    + "customer_phone text not null,"
-    + "customer_name text,"
-    + "vendor text not null,"
-    + "items jsonb default '[]',"
-    + "subtotal numeric default 0,"
-    + "delivery_fee numeric default 8,"
-    + "total numeric default 0,"
-    + "currency text default 'GHS',"
-    + "status text default 'Order created',"
-    + "rider_phone text,"
-    + "pickup_code text default '4821',"
-    + "delivery_pin text default '7392',"
-    + "pickup_token text,"
-    + "pickup_scanned_at timestamptz,"
-    + "vendor_accepted_at timestamptz,"
-    + "rider_accepted_at timestamptz,"
-    + "rider_commission numeric default 15,"
-    + "delivery_address jsonb,"
-    + "note text,"
-    + "created_at timestamptz default now(),"
-    + "updated_at timestamptz default now()"
-    + ");"
-    + "create table if not exists bookings ("
-    + "id text primary key,"
-    + "customer_phone text not null,"
-    + "customer_name text,"
-    + "hotel text not null,"
-    + "room text not null,"
-    + "check_in date,"
-    + "check_out date,"
-    + "nights int default 1,"
-    + "guests int default 1,"
-    + "total numeric default 0,"
-    + "currency text default 'GHS',"
-    + "status text default 'BOOKED',"
-    + "checkin_code text not null,"
-    + "checked_in_at timestamptz,"
-    + "checked_in_by text,"
-    + "created_at timestamptz default now(),"
-    + "updated_at timestamptz default now()"
-    + ");"
-    + "create table if not exists rider_earnings ("
-    + "id bigserial primary key,"
-    + "rider_phone text not null,"
-    + "order_id text not null,"
-    + "amount numeric default 0,"
-    + "day date default current_date,"
-    + "created_at timestamptz default now()"
-    + ");"
-    + "create table if not exists audit_logs ("
-    + "id bigserial primary key,"
-    + "actor text,"
-    + "action text,"
-    + "entity_type text,"
-    + "entity_id text,"
-    + "meta jsonb,"
-    + "created_at timestamptz default now()"
-    + ");"
-    + "create index if not exists orders_customer_idx on orders(customer_phone, created_at desc);"
-    + "create index if not exists orders_rider_idx on orders(rider_phone, updated_at desc);"
-    + "create index if not exists bookings_hotel_idx on bookings(hotel, created_at desc);"
-    + "create index if not exists bookings_code_idx on bookings(checkin_code);"
-    + "create index if not exists earnings_rider_day_idx on rider_earnings(rider_phone, day);";
+  var sql =
+    "create extension if not exists pgcrypto;" +
+    "create table if not exists users (id uuid primary key default gen_random_uuid(), phone text unique not null, email text, full_name text, role text default 'customer', verified boolean default false, status text default 'active', created_at timestamptz default now(), updated_at timestamptz default now());" +
+    "create table if not exists orders (id text primary key, customer_phone text not null, customer_name text, vendor text not null, items jsonb default '[]', subtotal numeric default 0, delivery_fee numeric default 8, total numeric default 0, currency text default 'GHS', status text default 'Order created', rider_phone text, pickup_code text default '4821', delivery_pin text default '7392', pickup_token text, pickup_scanned_at timestamptz, vendor_accepted_at timestamptz, rider_accepted_at timestamptz, rider_commission numeric default 15, delivery_address jsonb, note text, created_at timestamptz default now(), updated_at timestamptz default now());" +
+    "create table if not exists bookings (id text primary key, customer_phone text not null, customer_name text, hotel text not null, room text not null, check_in date, check_out date, nights int default 1, guests int default 1, total numeric default 0, currency text default 'GHS', status text default 'BOOKED', checkin_code text not null, checked_in_at timestamptz, checked_in_by text, created_at timestamptz default now(), updated_at timestamptz default now());" +
+    "create table if not exists rider_earnings (id bigserial primary key, rider_phone text not null, order_id text not null, amount numeric default 0, day date default current_date, created_at timestamptz default now());" +
+    "create table if not exists audit_logs (id bigserial primary key, actor text, action text, entity_type text, entity_id text, meta jsonb, created_at timestamptz default now());" +
+    "create index if not exists orders_customer_idx on orders(customer_phone, created_at desc);" +
+    "create index if not exists orders_rider_idx on orders(rider_phone, updated_at desc);" +
+    "create index if not exists bookings_hotel_idx on bookings(hotel, created_at desc);" +
+    "create index if not exists bookings_code_idx on bookings(checkin_code);" +
+    "create index if not exists earnings_rider_day_idx on rider_earnings(rider_phone, day);";
 
   return pool.query(sql).then(function(){
-    // add columns for older tables
-    var alter = ''
-      + "alter table orders add column if not exists pickup_token text;"
-      + "alter table orders add column if not exists pickup_scanned_at timestamptz;"
-      + "alter table orders add column if not exists vendor_accepted_at timestamptz;"
-      + "alter table orders add column if not exists rider_accepted_at timestamptz;"
-      + "alter table orders add column if not exists rider_commission numeric default 15;"
-      + "alter table orders add column if not exists subtotal numeric default 0;"
-      + "alter table orders add column if not exists delivery_fee numeric default 8;";
+    var alter =
+      "alter table orders add column if not exists pickup_token text;" +
+      "alter table orders add column if not exists pickup_scanned_at timestamptz;" +
+      "alter table orders add column if not exists vendor_accepted_at timestamptz;" +
+      "alter table orders add column if not exists rider_accepted_at timestamptz;" +
+      "alter table orders add column if not exists rider_commission numeric default 15;" +
+      "alter table orders add column if not exists subtotal numeric default 0;" +
+      "alter table orders add column if not exists delivery_fee numeric default 8;";
     return pool.query(alter);
   }).catch(function(e){
-    console.warn('Alter columns warning:', e.message);
+    console.warn('Alter warning:', e.message);
   });
 }
 
-// ---------------- Memory fallback ----------------
+// -------- Memory fallback --------
 
 var mem = {
   users: new Map(),
@@ -172,7 +104,7 @@ var mem = {
   audit: []
 };
 
-// ---------------- Helpers ----------------
+// -------- Helpers --------
 
 function normalizePhone(p) {
   return String(p || '').replace(/[\s()\-]/g, '');
@@ -221,9 +153,7 @@ function configuredRole(phone) {
 }
 
 function getUser(phone) {
-  if (pool) {
-    return q('select * from users where phone=$1', [phone]).then(function(r){ return r[0]; });
-  }
+  if (pool) return q('select * from users where phone=$1', [phone]).then(function(r){ return r[0]; });
   return Promise.resolve(mem.users.get(phone));
 }
 
@@ -231,10 +161,7 @@ function upsertUser(phone) {
   var role = configuredRole(phone);
   if (pool) {
     return q(
-      "insert into users(phone,role,verified) values($1,$2,true) "
-      + "on conflict(phone) do update set verified=true, "
-      + "role=case when $2='admin' then 'admin' else users.role end "
-      + "returning *",
+      "insert into users(phone,role,verified) values($1,$2,true) on conflict(phone) do update set verified=true, role=case when $2='admin' then 'admin' else users.role end returning *",
       [phone, role]
     ).then(function(r){ return r[0]; });
   }
@@ -245,7 +172,7 @@ function upsertUser(phone) {
   return Promise.resolve(u);
 }
 
-// ---------------- Middleware ----------------
+// -------- Middleware --------
 
 function auth(req, res, next) {
   try {
@@ -278,7 +205,7 @@ function audit(actor, action, type, id, meta) {
   return Promise.resolve();
 }
 
-// ---------------- Health ----------------
+// -------- Health --------
 
 app.get('/api/health', function(req, res) {
   res.json({
@@ -292,7 +219,7 @@ app.get('/api/health', function(req, res) {
   });
 });
 
-// ---------------- Auth routes ----------------
+// -------- Auth --------
 
 app.post('/api/auth/request-otp', authLimiter, function(req, res) {
   var phone = normalizePhone(req.body.phone);
@@ -328,9 +255,7 @@ app.post('/api/auth/verify-otp', authLimiter, function(req, res) {
 });
 
 app.get('/api/me', auth, function(req, res) {
-  getUser(req.user.phone).then(function(u){
-    res.json({ user: u || req.user });
-  });
+  getUser(req.user.phone).then(function(u){ res.json({ user: u || req.user }); });
 });
 
 app.patch('/api/me', auth, function(req, res) {
@@ -338,9 +263,7 @@ app.patch('/api/me', auth, function(req, res) {
   var email = String(req.body.email || '').slice(0, 200);
   if (pool) {
     q('update users set full_name=$1,email=$2,updated_at=now() where phone=$3 returning *',
-      [fullName, email, req.user.phone]).then(function(r){
-        res.json({ user: r[0] });
-      });
+      [fullName, email, req.user.phone]).then(function(r){ res.json({ user: r[0] }); });
     return;
   }
   var u = mem.users.get(req.user.phone) || { phone: req.user.phone, role: 'customer' };
@@ -350,7 +273,7 @@ app.patch('/api/me', auth, function(req, res) {
   res.json({ user: u });
 });
 
-// ---------------- Catalog ----------------
+// -------- Catalog --------
 
 var CATALOG = {
   restaurants: [
@@ -382,7 +305,7 @@ var CATALOG = {
 
 app.get('/api/catalog', function(req, res) { res.json(CATALOG); });
 
-// ---------------- Orders ----------------
+// -------- Orders --------
 
 var ORDER_FLOW = [
   'Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready',
@@ -400,9 +323,9 @@ function makeId(prefix, digits) {
 app.post('/api/orders', auth, function(req, res) {
   var items = Array.isArray(req.body.items) ? req.body.items : [];
   if (!items.length) return res.status(400).json({ error: 'Cart is empty' });
-
   var subtotal = 0;
-  for (var i = 0; i < items.length; i++) {
+  var i;
+  for (i = 0; i < items.length; i++) {
     subtotal += Number(items[i].price || 0) * Number(items[i].qty || 0);
   }
   var deliveryFee = Number(req.body.deliveryFee != null ? req.body.deliveryFee : 8);
@@ -427,20 +350,16 @@ app.post('/api/orders', auth, function(req, res) {
 
   if (pool) {
     q(
-      "insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) "
-      + "values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+      "insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
       [order.id, order.customer_phone, order.customer_name, order.vendor, JSON.stringify(items),
        subtotal, deliveryFee, total, order.status, order.pickup_code, order.delivery_pin,
        JSON.stringify(order.delivery_address), order.note]
     ).then(function(){
       audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
       res.status(201).json(order);
-    }).catch(function(e){
-      res.status(500).json({ error: e.message });
-    });
+    }).catch(function(e){ res.status(500).json({ error: e.message }); });
     return;
   }
-
   mem.orders.set(order.id, order);
   audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
   res.status(201).json(order);
@@ -460,7 +379,6 @@ app.get('/api/orders', auth, function(req, res) {
 app.patch('/api/orders/:id/status', auth, function(req, res) {
   var s = String(req.body.status || '').slice(0, 40);
   if (ORDER_FLOW.indexOf(s) === -1) return res.status(400).json({ error: 'Invalid status' });
-
   if (pool) {
     q('select * from orders where id=$1', [req.params.id]).then(function(r){
       var existing = r[0];
@@ -468,19 +386,14 @@ app.patch('/api/orders/:id/status', auth, function(req, res) {
       var canCustomer = existing.customer_phone === req.user.phone;
       var canRider = existing.rider_phone === req.user.phone && req.user.role === 'rider';
       var canOps = ['vendor','admin','superadmin'].indexOf(req.user.role) !== -1;
-      if (!canCustomer && !canRider && !canOps) {
-        return res.status(403).json({ error: 'Not allowed to update this order' });
-      }
+      if (!canCustomer && !canRider && !canOps) return res.status(403).json({ error: 'Not allowed' });
       return q(
         "update orders set status=$1, updated_at=now(), rider_phone=coalesce($2, rider_phone) where id=$3 returning *",
         [s, canRider ? req.user.phone : (req.body.riderPhone || null), req.params.id]
-      ).then(function(up){
-        return res.json(up[0]);
-      });
+      ).then(function(up){ res.json(up[0]); });
     });
     return;
   }
-
   var o = mem.orders.get(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
   if (o.customer_phone !== req.user.phone && ['vendor','rider','admin','superadmin'].indexOf(req.user.role) === -1) {
@@ -491,20 +404,42 @@ app.patch('/api/orders/:id/status', auth, function(req, res) {
   res.json(o);
 });
 
-// ---------------- Vendor approval + pickup QR ----------------
+// -------- Vendor workflow buttons --------
 
-app.patch('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','superadmin'), function(req, res) {
-  var pickupToken = 'PCK-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-
+app.post('/api/orders/:id/vendor-accept', auth, roles('vendor','admin','superadmin'), function(req, res) {
   if (pool) {
-    q(
-      "update orders set status='Restaurant accepted', pickup_token=$1, vendor_accepted_at=now(), updated_at=now() where id=$2 returning *",
-      [pickupToken, req.params.id]
-    ).then(function(r){
-      if (!r[0]) return res.status(404).json({ error: 'Order not found' });
-      audit(req.user.phone, 'order.vendor-approve', 'order', req.params.id);
-      res.json(r[0]);
-    });
+    q("update orders set status='Restaurant accepted', vendor_accepted_at=now(), updated_at=now() where id=$1 returning *",
+      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Restaurant accepted';
+  o.vendor_accepted_at = new Date().toISOString();
+  res.json(o);
+});
+
+app.post('/api/orders/:id/food-ready', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Food ready', updated_at=now() where id=$1 returning *",
+      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Food ready';
+  res.json(o);
+});
+
+// Vendor approves and gets a pickup QR
+app.post('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  var pickupToken = 'PCK-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  if (pool) {
+    q("update orders set status='Restaurant accepted', pickup_token=$1, vendor_accepted_at=now(), updated_at=now() where id=$2 returning *",
+      [pickupToken, req.params.id]).then(function(r){
+        if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+        res.json(r[0]);
+      });
     return;
   }
   var o = mem.orders.get(req.params.id);
@@ -512,221 +447,123 @@ app.patch('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','supera
   o.status = 'Restaurant accepted';
   o.pickup_token = pickupToken;
   o.vendor_accepted_at = new Date().toISOString();
-  audit(req.user.phone, 'order.vendor-approve', 'order', req.params.id);
   res.json(o);
 });
 
 app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','rider'), function(req, res) {
   var getOrder;
-  if (pool) {
-    getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
-  } else {
-    getOrder = Promise.resolve(mem.orders.get(req.params.id));
-  }
+  if (pool) getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
+  else getOrder = Promise.resolve(mem.orders.get(req.params.id));
   getOrder.then(function(order){
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!order.pickup_token) return res.status(400).json({ error: 'Order not yet approved by vendor' });
+    if (!order.pickup_token) return res.status(400).json({ error: 'Not yet approved by vendor' });
     var token = jwt.sign({ t: 'pickup', id: order.id, code: order.pickup_token }, SIGNING_SECRET);
     return QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' }).then(function(png){
-      res.json({ png: png, code: order.pickup_token, orderId: order.id, total: order.total, status: order.status });
+      res.json({ png: png, code: order.pickup_token, orderId: order.id });
     });
-  }).catch(function(e){
-    res.status(500).json({ error: e.message });
-  });
+  }).catch(function(e){ res.status(500).json({ error: e.message }); });
 });
 
-// ---------------- Rider pickup ----------------
+// -------- Rider workflow buttons --------
+
+app.post('/api/orders/:id/rider-arrived', auth, roles('rider','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Rider arrived', rider_phone=$1, updated_at=now() where id=$2 returning *",
+      [req.user.phone, req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Rider arrived';
+  o.rider_phone = req.user.phone;
+  res.json(o);
+});
+
+app.post('/api/orders/:id/rider-picked-up', auth, roles('rider','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Food picked up', pickup_scanned_at=now(), updated_at=now() where id=$1 returning *",
+      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Food picked up';
+  o.pickup_scanned_at = new Date().toISOString();
+  res.json(o);
+});
+
+app.post('/api/orders/:id/rider-arrived-customer', auth, roles('rider','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Arrived at customer', updated_at=now() where id=$1 returning *",
+      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Arrived at customer';
+  res.json(o);
+});
+
+app.post('/api/orders/:id/verify-delivery', auth, roles('rider','admin','superadmin'), function(req, res) {
+  var pin = String(req.body.pin || '').trim();
+  var getOrder;
+  if (pool) getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
+  else getOrder = Promise.resolve(mem.orders.get(req.params.id));
+  getOrder.then(function(order){
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.delivery_pin && order.delivery_pin !== pin) return res.status(400).json({ error: 'Wrong delivery PIN' });
+    var commission = Number(order.rider_commission || 15);
+    var owner = order.rider_phone || req.user.phone;
+    if (pool) {
+      return q("update orders set status='Completed', updated_at=now() where id=$1", [order.id])
+        .then(function(){
+          return q("insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)",
+            [owner, order.id, commission]);
+        })
+        .then(function(){ res.json({ ok: true, commission: commission }); });
+    }
+    order.status = 'Completed';
+    mem.earnings.push({ rider_phone: owner, order_id: order.id, amount: commission, day: new Date().toISOString().slice(0,10) });
+    res.json({ ok: true, commission: commission });
+  });
+});
 
 app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), function(req, res) {
   var raw = String(req.body.qr || '').trim();
   var code = String(req.body.code || '').trim().toUpperCase();
   var decoded = null;
-
   if (raw) {
     try { decoded = jwt.verify(raw, SIGNING_SECRET); }
     catch (e) { return res.status(400).json({ error: 'Invalid QR' }); }
     if (decoded.t !== 'pickup') return res.status(400).json({ error: 'Not a pickup code' });
   }
-
   var orderId = decoded ? decoded.id : null;
   var tok = decoded ? decoded.code : code;
 
   if (pool) {
-    var sql;
-    var params;
-    if (orderId) {
-      sql = 'select * from orders where id=$1 and pickup_token=$2';
-      params = [orderId, tok];
-    } else {
-      sql = 'select * from orders where pickup_token=$1';
-      params = [tok];
-    }
+    var sql, params;
+    if (orderId) { sql = 'select * from orders where id=$1 and pickup_token=$2'; params = [orderId, tok]; }
+    else { sql = 'select * from orders where pickup_token=$1'; params = [tok]; }
     q(sql, params).then(function(r){
       var order = r[0];
       if (!order) return res.status(404).json({ error: 'Order not found or wrong code' });
-      return q(
-        "update orders set status='Food picked up', rider_phone=$1, pickup_scanned_at=now(), updated_at=now() where id=$2 returning *",
-        [req.user.phone, order.id]
-      ).then(function(up){
-        res.json({ ok: true, order: up[0] });
-      });
+      return q("update orders set status='Food picked up', rider_phone=$1, pickup_scanned_at=now(), updated_at=now() where id=$2 returning *",
+        [req.user.phone, order.id]).then(function(up){ res.json({ ok: true, order: up[0] }); });
     });
     return;
   }
-
   var arr = [];
   mem.orders.forEach(function(v){ arr.push(v); });
   var found;
-  if (orderId) {
-    found = arr.filter(function(o){ return o.id === orderId && o.pickup_token === tok; })[0];
-  } else {
-    found = arr.filter(function(o){ return o.pickup_token === tok; })[0];
-  }
+  if (orderId) found = arr.filter(function(o){ return o.id === orderId && o.pickup_token === tok; })[0];
+  else found = arr.filter(function(o){ return o.pickup_token === tok; })[0];
   if (!found) return res.status(404).json({ error: 'Order not found or wrong code' });
   found.status = 'Food picked up';
   found.rider_phone = req.user.phone;
-  found.pickup_scanned_at = new Date().toISOString();
   res.json({ ok: true, order: found });
 });
 
-// ---------------- Bookings ----------------
-
-app.post('/api/bookings', auth, function(req, res) {
-  var hotel = String(req.body.hotel || '').slice(0, 80);
-  var room = String(req.body.room || '').slice(0, 80);
-  var checkIn = req.body.checkIn || null;
-  var checkOut = req.body.checkOut || null;
-  var guests = Math.max(1, Number(req.body.guests || 1));
-  var total = Number(req.body.total || 0);
-  var nights = 1;
-
-  if (checkIn && checkOut) {
-    var diff = new Date(checkOut) - new Date(checkIn);
-    if (diff > 0) nights = Math.max(1, Math.round(diff / 86400000));
-  }
-
-  var checkinCode = 'OBG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-  var booking = {
-    id: makeId('OBU-HL-'),
-    customer_phone: req.user.phone,
-    customer_name: req.body.customerName || null,
-    hotel: hotel,
-    room: room,
-    check_in: checkIn,
-    check_out: checkOut,
-    nights: nights,
-    guests: guests,
-    total: total,
-    currency: 'GHS',
-    status: 'BOOKED',
-    checkin_code: checkinCode
-  };
-
-  if (pool) {
-    q(
-      "insert into bookings(id,customer_phone,customer_name,hotel,room,check_in,check_out,nights,guests,total,status,checkin_code) "
-      + "values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'BOOKED',$11)",
-      [booking.id, booking.customer_phone, booking.customer_name, hotel, room,
-       checkIn, checkOut, nights, guests, total, checkinCode]
-    ).then(function(){
-      audit(req.user.phone, 'booking.created', 'booking', booking.id);
-      res.status(201).json(booking);
-    });
-    return;
-  }
-  mem.bookings.set(booking.id, booking);
-  audit(req.user.phone, 'booking.created', 'booking', booking.id);
-  res.status(201).json(booking);
-});
-
-app.get('/api/bookings', auth, function(req, res) {
-  if (pool) {
-    q('select * from bookings where customer_phone=$1 order by created_at desc', [req.user.phone])
-      .then(function(rows){ res.json(rows); });
-    return;
-  }
-  var arr = [];
-  mem.bookings.forEach(function(v){ if (v.customer_phone === req.user.phone) arr.push(v); });
-  res.json(arr);
-});
-
-app.get('/api/bookings/:id/qr', auth, function(req, res) {
-  var getBooking;
-  if (pool) {
-    getBooking = q('select * from bookings where id=$1', [req.params.id]).then(function(r){ return r[0]; });
-  } else {
-    getBooking = Promise.resolve(mem.bookings.get(req.params.id));
-  }
-  getBooking.then(function(b){
-    if (!b) return res.status(404).json({ error: 'Booking not found' });
-    if (b.customer_phone !== req.user.phone && ['hotel','admin','superadmin'].indexOf(req.user.role) === -1) {
-      return res.status(403).json({ error: 'Not allowed' });
-    }
-    var payload = { t: 'checkin', id: b.id, code: b.checkin_code, hotel: b.hotel, exp: Date.now() + 1000*60*60*24*30 };
-    var token = jwt.sign(payload, SIGNING_SECRET);
-    return QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' }).then(function(png){
-      res.json({ png: png, code: b.checkin_code, bookingId: b.id });
-    });
-  }).catch(function(e){
-    res.status(500).json({ error: e.message });
-  });
-});
-
-// ---------------- Hotel check-in ----------------
-
-app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), function(req, res) {
-  var raw = String(req.body.qr || '').trim();
-  var code = String(req.body.code || '').trim().toUpperCase();
-
-  var findBooking;
-
-  if (raw) {
-    var decoded;
-    try { decoded = jwt.verify(raw, SIGNING_SECRET); }
-    catch (e) { return res.status(400).json({ error: 'Invalid QR' }); }
-    if (decoded.t !== 'checkin') return res.status(400).json({ error: 'Not a check-in code' });
-    if (decoded.exp && decoded.exp < Date.now()) return res.status(400).json({ error: 'Code expired' });
-    if (pool) {
-      findBooking = q('select * from bookings where id=$1 and checkin_code=$2', [decoded.id, decoded.code])
-        .then(function(r){ return r[0]; });
-    } else {
-      findBooking = Promise.resolve(mem.bookings.get(decoded.id));
-    }
-  } else if (code) {
-    if (pool) {
-      findBooking = q('select * from bookings where checkin_code=$1', [code]).then(function(r){ return r[0]; });
-    } else {
-      var arr = [];
-      mem.bookings.forEach(function(v){ arr.push(v); });
-      findBooking = Promise.resolve(arr.filter(function(b){ return b.checkin_code === code; })[0]);
-    }
-  } else {
-    return res.status(400).json({ error: 'Send qr or code' });
-  }
-
-  findBooking.then(function(b){
-    if (!b) return res.status(404).json({ error: 'Booking not found' });
-    if (b.status === 'CHECKED IN') return res.json({ ok: true, alreadyCheckedIn: true, booking: b });
-
-    if (pool) {
-      q(
-        "update bookings set status='CHECKED IN', checked_in_at=now(), checked_in_by=$1, updated_at=now() where id=$2 returning *",
-        [req.user.phone, b.id]
-      ).then(function(up){
-        audit(req.user.phone, 'booking.checkin', 'booking', b.id);
-        res.json({ ok: true, booking: up[0] });
-      });
-      return;
-    }
-    b.status = 'CHECKED IN';
-    b.checked_in_at = new Date().toISOString();
-    b.checked_in_by = req.user.phone;
-    audit(req.user.phone, 'booking.checkin', 'booking', b.id);
-    res.json({ ok: true, booking: b });
-  });
-});
-
-// ---------------- Rider: online verification ----------------
+// -------- Rider online verification --------
 
 app.post('/api/rider/online', auth, roles('rider','admin','superadmin'), function(req, res) {
   var code = String(1000 + Math.floor(Math.random() * 9000));
@@ -745,23 +582,17 @@ app.post('/api/rider/verify-online', auth, roles('rider','admin','superadmin'), 
   res.json({ ok: true });
 });
 
-// ---------------- Rider: assigned orders ----------------
-
 app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.phone;
   if (pool) {
-    q(
-      "select * from orders "
-      + "where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted')) "
-      + "and status <> 'Completed' order by created_at desc",
-      [phone]
-    ).then(function(rows){ res.json(rows); });
+    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status <> 'Completed' order by created_at desc",
+      [phone]).then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
   mem.orders.forEach(function(o){
     if (o.status === 'Completed') return;
-    if (o.rider_phone === phone || ['Food ready','Restaurant accepted','Rider accepted'].indexOf(o.status) !== -1) arr.push(o);
+    if (o.rider_phone === phone || ['Food ready','Restaurant accepted','Rider accepted','Rider arrived'].indexOf(o.status) !== -1) arr.push(o);
   });
   res.json(arr);
 });
@@ -769,58 +600,19 @@ app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), functi
 app.post('/api/rider/orders/:id/accept', auth, roles('rider','admin','superadmin'), function(req, res) {
   var commission = Number(req.body.commission || 15);
   if (pool) {
-    q(
-      "update orders set rider_phone=$1, rider_accepted_at=now(), rider_commission=$2, "
-      + "status=case when status in ('Food ready','Restaurant accepted') then 'Rider accepted' else status end, "
-      + "updated_at=now() where id=$3 returning *",
-      [req.user.phone, commission, req.params.id]
-    ).then(function(r){
-      if (!r[0]) return res.status(404).json({ error: 'Order not found' });
-      res.json(r[0]);
-    });
+    q("update orders set rider_phone=$1, rider_accepted_at=now(), rider_commission=$2, status=case when status in ('Food ready','Restaurant accepted') then 'Rider accepted' else status end, updated_at=now() where id=$3 returning *",
+      [req.user.phone, commission, req.params.id]).then(function(r){
+        if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+        res.json(r[0]);
+      });
     return;
   }
   var o = mem.orders.get(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
   o.rider_phone = req.user.phone;
-  o.rider_accepted_at = new Date().toISOString();
   o.rider_commission = commission;
   if (['Food ready','Restaurant accepted'].indexOf(o.status) !== -1) o.status = 'Rider accepted';
   res.json(o);
-});
-
-app.post('/api/rider/orders/:id/complete', auth, roles('rider','admin','superadmin'), function(req, res) {
-  var getOrder;
-  if (pool) {
-    getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
-  } else {
-    getOrder = Promise.resolve(mem.orders.get(req.params.id));
-  }
-  getOrder.then(function(order){
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    var isOwner = order.rider_phone === req.user.phone;
-    var isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
-    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Not your order' });
-
-    var commission = Number(order.rider_commission || 15);
-    var owner = isOwner ? req.user.phone : order.rider_phone;
-
-    if (pool) {
-      return q("update orders set status='Completed', updated_at=now() where id=$1", [order.id])
-        .then(function(){
-          return q(
-            'insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)',
-            [owner, order.id, commission]
-          );
-        })
-        .then(function(){
-          res.json({ ok: true, commission: commission });
-        });
-    }
-    order.status = 'Completed';
-    mem.earnings.push({ rider_phone: owner, order_id: order.id, amount: commission, day: new Date().toISOString().slice(0,10) });
-    res.json({ ok: true, commission: commission });
-  });
 });
 
 app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), function(req, res) {
@@ -846,41 +638,33 @@ app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), functio
 
 app.get('/api/rider/earnings', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.role === 'rider' ? req.user.phone : (req.query.rider || req.user.phone);
-
   var days = [];
-  for (var i = 6; i >= 0; i--) {
+  var i;
+  for (i = 6; i >= 0; i--) {
     var d = new Date();
     d.setDate(d.getDate() - i);
     days.push(d.toISOString().slice(0, 10));
   }
-
   if (pool) {
-    q(
-      "select day::text as day, sum(amount)::float as amount, count(*)::int as deliveries "
-      + "from rider_earnings "
-      + "where rider_phone=$1 and day >= current_date - interval '6 days' "
-      + "group by day",
-      [phone]
-    ).then(function(rows){
-      var series = days.map(function(day){
-        var r = rows.filter(function(x){ return x.day === day; })[0];
-        return { day: day, amount: r ? Number(r.amount) : 0, deliveries: r ? r.deliveries : 0 };
+    q("select day::text as day, sum(amount)::float as amount, count(*)::int as deliveries from rider_earnings where rider_phone=$1 and day >= current_date - interval '6 days' group by day",
+      [phone]).then(function(rows){
+        var series = days.map(function(day){
+          var r = rows.filter(function(x){ return x.day === day; })[0];
+          return { day: day, amount: r ? Number(r.amount) : 0, deliveries: r ? r.deliveries : 0 };
+        });
+        var total = series.reduce(function(n, s){ return n + s.amount; }, 0);
+        var today = series[series.length - 1].amount;
+        res.json({ series: series, total: total, today: today, currency: 'GHS' });
       });
-      var total = series.reduce(function(n, s){ return n + s.amount; }, 0);
-      var today = series[series.length - 1].amount;
-      res.json({ series: series, total: total, today: today, currency: 'GHS' });
-    });
     return;
   }
-
-  var filtered = mem.earnings.filter(function(e){
-    return e.rider_phone === phone && days.indexOf(e.day) !== -1;
-  });
+  var filtered = mem.earnings.filter(function(e){ return e.rider_phone === phone && days.indexOf(e.day) !== -1; });
   var rows = [];
-  for (var j = 0; j < filtered.length; j++) {
+  var j, k;
+  for (j = 0; j < filtered.length; j++) {
     var e = filtered[j];
     var row = null;
-    for (var k = 0; k < rows.length; k++) if (rows[k].day === e.day) row = rows[k];
+    for (k = 0; k < rows.length; k++) if (rows[k].day === e.day) row = rows[k];
     if (!row) { row = { day: e.day, amount: 0, deliveries: 0 }; rows.push(row); }
     row.amount += Number(e.amount);
     row.deliveries += 1;
@@ -894,22 +678,110 @@ app.get('/api/rider/earnings', auth, roles('rider','admin','superadmin'), functi
   res.json({ series: series, total: total, today: today, currency: 'GHS' });
 });
 
-app.get('/api/rider/requests', auth, roles('rider','admin','superadmin'), function(req, res) {
+// -------- Bookings --------
+
+app.post('/api/bookings', auth, function(req, res) {
+  var hotel = String(req.body.hotel || '').slice(0, 80);
+  var room = String(req.body.room || '').slice(0, 80);
+  var checkIn = req.body.checkIn || null;
+  var checkOut = req.body.checkOut || null;
+  var guests = Math.max(1, Number(req.body.guests || 1));
+  var total = Number(req.body.total || 0);
+  var nights = 1;
+  if (checkIn && checkOut) {
+    var diff = new Date(checkOut) - new Date(checkIn);
+    if (diff > 0) nights = Math.max(1, Math.round(diff / 86400000));
+  }
+  var checkinCode = 'OBG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  var booking = {
+    id: makeId('OBU-HL-'),
+    customer_phone: req.user.phone,
+    customer_name: req.body.customerName || null,
+    hotel: hotel, room: room, check_in: checkIn, check_out: checkOut,
+    nights: nights, guests: guests, total: total, currency: 'GHS',
+    status: 'BOOKED', checkin_code: checkinCode
+  };
   if (pool) {
-    q(
-      "select * from orders "
-      + "where (status in ('Food ready','Rider assigned','Restaurant accepted','Preparing') or rider_phone=$1) "
-      + "and status <> 'Completed' order by created_at desc limit 20",
-      [req.user.phone]
-    ).then(function(rows){ res.json(rows); });
+    q("insert into bookings(id,customer_phone,customer_name,hotel,room,check_in,check_out,nights,guests,total,status,checkin_code) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'BOOKED',$11)",
+      [booking.id, booking.customer_phone, booking.customer_name, hotel, room, checkIn, checkOut, nights, guests, total, checkinCode]
+    ).then(function(){
+      audit(req.user.phone, 'booking.created', 'booking', booking.id);
+      res.status(201).json(booking);
+    });
+    return;
+  }
+  mem.bookings.set(booking.id, booking);
+  res.status(201).json(booking);
+});
+
+app.get('/api/bookings', auth, function(req, res) {
+  if (pool) {
+    q('select * from bookings where customer_phone=$1 order by created_at desc', [req.user.phone])
+      .then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
-  mem.orders.forEach(function(o){ if (o.status !== 'Completed') arr.push(o); });
+  mem.bookings.forEach(function(v){ if (v.customer_phone === req.user.phone) arr.push(v); });
   res.json(arr);
 });
 
-// ---------------- Portal: overview / orders / bookings ----------------
+app.get('/api/bookings/:id/qr', auth, function(req, res) {
+  var getBooking;
+  if (pool) getBooking = q('select * from bookings where id=$1', [req.params.id]).then(function(r){ return r[0]; });
+  else getBooking = Promise.resolve(mem.bookings.get(req.params.id));
+  getBooking.then(function(b){
+    if (!b) return res.status(404).json({ error: 'Booking not found' });
+    if (b.customer_phone !== req.user.phone && ['hotel','admin','superadmin'].indexOf(req.user.role) === -1) {
+      return res.status(403).json({ error: 'Not allowed' });
+    }
+    var payload = { t: 'checkin', id: b.id, code: b.checkin_code, hotel: b.hotel, exp: Date.now() + 1000*60*60*24*30 };
+    var token = jwt.sign(payload, SIGNING_SECRET);
+    return QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' }).then(function(png){
+      res.json({ png: png, code: b.checkin_code, bookingId: b.id });
+    });
+  }).catch(function(e){ res.status(500).json({ error: e.message }); });
+});
+
+app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), function(req, res) {
+  var raw = String(req.body.qr || '').trim();
+  var code = String(req.body.code || '').trim().toUpperCase();
+  var findBooking;
+
+  if (raw) {
+    var decoded;
+    try { decoded = jwt.verify(raw, SIGNING_SECRET); }
+    catch (e) { return res.status(400).json({ error: 'Invalid QR' }); }
+    if (decoded.t !== 'checkin') return res.status(400).json({ error: 'Not a check-in code' });
+    if (decoded.exp && decoded.exp < Date.now()) return res.status(400).json({ error: 'Code expired' });
+    if (pool) findBooking = q('select * from bookings where id=$1 and checkin_code=$2', [decoded.id, decoded.code]).then(function(r){ return r[0]; });
+    else findBooking = Promise.resolve(mem.bookings.get(decoded.id));
+  } else if (code) {
+    if (pool) findBooking = q('select * from bookings where checkin_code=$1', [code]).then(function(r){ return r[0]; });
+    else {
+      var arr = [];
+      mem.bookings.forEach(function(v){ arr.push(v); });
+      findBooking = Promise.resolve(arr.filter(function(b){ return b.checkin_code === code; })[0]);
+    }
+  } else {
+    return res.status(400).json({ error: 'Send qr or code' });
+  }
+
+  findBooking.then(function(b){
+    if (!b) return res.status(404).json({ error: 'Booking not found' });
+    if (b.status === 'CHECKED IN') return res.json({ ok: true, alreadyCheckedIn: true, booking: b });
+    if (pool) {
+      q("update bookings set status='CHECKED IN', checked_in_at=now(), checked_in_by=$1, updated_at=now() where id=$2 returning *",
+        [req.user.phone, b.id]).then(function(up){ res.json({ ok: true, booking: up[0] }); });
+      return;
+    }
+    b.status = 'CHECKED IN';
+    b.checked_in_at = new Date().toISOString();
+    b.checked_in_by = req.user.phone;
+    res.json({ ok: true, booking: b });
+  });
+});
+
+// -------- Portal --------
 
 app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
   if (pool) {
@@ -924,14 +796,10 @@ app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
       q("select coalesce(sum(total),0) n from orders where status='Completed'")
     ]).then(function(r){
       res.json({
-        customers: Number(r[0][0].n),
-        riders: Number(r[1][0].n),
-        vendors: Number(r[2][0].n),
-        hotels: Number(r[3][0].n),
-        orders: Number(r[4][0].n),
-        bookings: Number(r[5][0].n),
-        checkedIn: Number(r[6][0].n),
-        revenue: Number(r[7][0].n)
+        customers: Number(r[0][0].n), riders: Number(r[1][0].n),
+        vendors: Number(r[2][0].n), hotels: Number(r[3][0].n),
+        orders: Number(r[4][0].n), bookings: Number(r[5][0].n),
+        checkedIn: Number(r[6][0].n), revenue: Number(r[7][0].n)
       });
     });
     return;
@@ -940,11 +808,7 @@ app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
   mem.bookings.forEach(function(b){ if (b.status === 'CHECKED IN') checkinCount++; });
   var revenue = 0;
   mem.orders.forEach(function(o){ if (o.status === 'Completed') revenue += o.total; });
-  res.json({
-    customers: 1, riders: 1, vendors: 1, hotels: 2,
-    orders: mem.orders.size, bookings: mem.bookings.size,
-    checkedIn: checkinCount, revenue: revenue
-  });
+  res.json({ customers: 1, riders: 1, vendors: 1, hotels: 2, orders: mem.orders.size, bookings: mem.bookings.size, checkedIn: checkinCount, revenue: revenue });
 });
 
 app.get('/api/portal/orders', auth, roles('vendor','admin','superadmin'), function(req, res) {
@@ -952,8 +816,7 @@ app.get('/api/portal/orders', auth, roles('vendor','admin','superadmin'), functi
     var vendorName = String(req.query.vendor || '').trim();
     if (!vendorName) return res.status(400).json({ error: 'vendor query required for vendors' });
     if (pool) {
-      q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName])
-        .then(function(rows){ res.json(rows); });
+      q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName]).then(function(rows){ res.json(rows); });
       return;
     }
     var arr = [];
@@ -974,8 +837,7 @@ app.get('/api/portal/bookings', auth, roles('hotel','admin','superadmin'), funct
   var hotel = req.user.role === 'hotel' ? String(req.query.hotel || '').trim() : '';
   if (pool) {
     if (hotel) {
-      q('select * from bookings where hotel=$1 order by created_at desc limit 200', [hotel])
-        .then(function(rows){ res.json(rows); });
+      q('select * from bookings where hotel=$1 order by created_at desc limit 200', [hotel]).then(function(rows){ res.json(rows); });
       return;
     }
     q('select * from bookings order by created_at desc limit 200').then(function(rows){ res.json(rows); });
@@ -983,19 +845,16 @@ app.get('/api/portal/bookings', auth, roles('hotel','admin','superadmin'), funct
   }
   var arr = [];
   mem.bookings.forEach(function(b){ arr.push(b); });
-  if (hotel) { arr = arr.filter(function(b){ return b.hotel === hotel; }); }
+  if (hotel) arr = arr.filter(function(b){ return b.hotel === hotel; });
   res.json(arr);
 });
 
-// ---------------- Payments ----------------
+// -------- Payments --------
 
 function flwCall(pathname, body) {
   return fetch('https://api.flutterwave.com/v3' + pathname, {
     method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + process.env.FLW_SECRET_KEY,
-      'Content-Type': 'application/json'
-    },
+    headers: { Authorization: 'Bearer ' + process.env.FLW_SECRET_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   }).then(function(r){
     return r.json().then(function(d){
@@ -1009,14 +868,10 @@ app.post('/api/payments/checkout', auth, function(req, res) {
   if (!process.env.FLW_SECRET_KEY) return res.status(503).json({ error: 'Flutterwave not configured' });
   var amount = Number(req.body.amount);
   if (!(amount > 0)) return res.status(400).json({ error: 'Invalid amount' });
-
   var tx_ref = 'OBG-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
   var base = process.env.APP_URL || (req.protocol + '://' + req.get('host'));
-
   flwCall('/payments', {
-    tx_ref: tx_ref,
-    amount: amount,
-    currency: 'GHS',
+    tx_ref: tx_ref, amount: amount, currency: 'GHS',
     redirect_url: base + '/payment-return',
     customer: {
       email: req.body.email || (req.user.phone.replace('+', '') + '@obuasigo.app'),
@@ -1028,9 +883,7 @@ app.post('/api/payments/checkout', auth, function(req, res) {
     meta: { entity_type: req.body.entityType || 'order', entity_id: req.body.entityId || '' }
   }).then(function(d){
     res.json({ ok: true, tx_ref: tx_ref, link: d.data ? d.data.link : null });
-  }).catch(function(e){
-    res.status(502).json({ error: e.message });
-  });
+  }).catch(function(e){ res.status(502).json({ error: e.message }); });
 });
 
 app.post('/api/webhooks/flutterwave', express.raw({ type: 'application/json' }), function(req, res) {
@@ -1044,7 +897,7 @@ app.post('/api/webhooks/flutterwave', express.raw({ type: 'application/json' }),
   res.json({ ok: true });
 });
 
-// ---------------- Live tracking ----------------
+// -------- Tracking --------
 
 var sockets = new Map();
 var WebSocket = null;
@@ -1053,32 +906,22 @@ try { WebSocket = require('ws'); } catch (e) { WebSocket = null; }
 function broadcast(orderId, msg) {
   var set = sockets.get(orderId);
   if (!set) return;
-  set.forEach(function(ws){
-    if (ws.readyState === 1) ws.send(JSON.stringify(msg));
-  });
+  set.forEach(function(ws){ if (ws.readyState === 1) ws.send(JSON.stringify(msg)); });
 }
 
 app.post('/api/tracking/:orderId', auth, roles('rider','admin','superadmin'), function(req, res) {
   var lat = Number(req.body.lat);
   var lng = Number(req.body.lng);
   if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: 'Invalid coordinates' });
-  var p = {
-    orderId: req.params.orderId,
-    lat: lat,
-    lng: lng,
-    accuracy: Number(req.body.accuracy || 0),
-    at: new Date().toISOString()
-  };
+  var p = { orderId: req.params.orderId, lat: lat, lng: lng, accuracy: Number(req.body.accuracy || 0), at: new Date().toISOString() };
   broadcast(p.orderId, { type: 'location', orderId: p.orderId, lat: p.lat, lng: p.lng, accuracy: p.accuracy, at: p.at });
   res.json({ ok: true, p: p });
 });
 
-// ---------------- Push ----------------
+// -------- Push --------
 
 var vapidReady = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
-if (vapidReady) {
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-}
+if (vapidReady) webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
 
 app.get('/api/push/public-key', function(req, res) {
   res.json({ configured: vapidReady, publicKey: vapidReady ? process.env.VAPID_PUBLIC_KEY : null });
@@ -1091,18 +934,14 @@ app.post('/api/push/subscribe', auth, function(req, res) {
   res.json({ ok: true });
 });
 
-// ---------------- Documents ----------------
+// -------- Documents --------
 
 app.post('/api/documents', auth, upload.single('document'), function(req, res) {
   if (!req.file) return res.status(400).json({ error: 'File required' });
   var allowed = ['image/jpeg', 'image/png', 'application/pdf'];
   if (allowed.indexOf(req.file.mimetype) === -1) return res.status(400).json({ error: 'JPG, PNG or PDF only' });
-
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_STORAGE_BUCKET) {
-    var sb = require('@supabase/supabase-js').createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    var sb = require('@supabase/supabase-js').createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     var filePath = 'documents/' + req.user.phone.replace(/\W/g, '_') + '/' + Date.now() + '-' + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     sb.storage.from(process.env.SUPABASE_STORAGE_BUCKET)
       .upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false })
@@ -1115,41 +954,18 @@ app.post('/api/documents', auth, upload.single('document'), function(req, res) {
   res.status(201).json({ ok: true, url: null });
 });
 
-// ---------------- Static page routes ----------------
+// -------- Static routes --------
 
-app.get('/payment-return', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'payment-return.html'));
-});
+app.get('/payment-return', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'payment-return.html')); });
+app.get('/portal', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
+app.get('/portal.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
+app.get('/scan', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'scan.html')); });
+app.get('/scan.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'scan.html')); });
+app.get('/rider', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'rider.html')); });
+app.get('/rider.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'rider.html')); });
+app.get('*', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
-app.get('/portal', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'portal.html'));
-});
-
-app.get('/portal.html', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'portal.html'));
-});
-
-app.get('/scan', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'scan.html'));
-});
-
-app.get('/scan.html', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'scan.html'));
-});
-
-app.get('/rider', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'rider.html'));
-});
-
-app.get('/rider.html', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'rider.html'));
-});
-
-app.get('*', function(req, res) {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// ---------------- Start ----------------
+// -------- Start --------
 
 var httpServer = require('http').createServer(app);
 
