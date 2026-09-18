@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ObuasiGo Rider</title>
 <style>
 :root{--green:#16a05e;--dark:#0e1714;--panel:#18251f;--line:#2b3c34;--muted:#9fb2a8;--gold:#f3a11b}
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--dark);color:#fff}
 .shell{max-width:760px;margin:auto;padding:20px 16px 110px}
-.top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
 .brand{font-weight:900;font-size:20px}
 .brand span{color:var(--green)}
 .dot{width:11px;height:11px;background:#6b766f;border-radius:50%;box-shadow:0 0 0 6px #6b766f22;transition:.2s}
@@ -23,121 +23,148 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;ba
 .muted{color:var(--muted);font-size:14px}
 .badge{display:inline-block;padding:5px 10px;border-radius:999px;background:#1f8a5633;color:#33d17a;font-size:12px;font-weight:800}
 .badge.gold{background:#fff4e033;color:var(--gold)}
-.btn{padding:11px 14px;border-radius:11px;font-weight:800;border:0;cursor:pointer;font-size:14px}
+.btn{padding:12px 14px;border-radius:11px;font-weight:800;border:0;cursor:pointer;font-size:14px}
 .primary{background:var(--green);color:#fff}
 .secondary{background:#223029;color:#d9e8e0}
+.danger{background:#7a2020;color:#fff}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .earning{font-size:30px;font-weight:900}
 .chart-wrap{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px}
 canvas#chart{width:100%;height:170px;display:block}
-.timeline{border-left:2px solid #2b3c34;margin-top:12px;padding-left:16px}
-.event{position:relative;padding:7px 0;font-size:14px;color:#c6d4cd}
-.event:before{content:"";position:absolute;left:-23px;top:13px;width:10px;height:10px;border-radius:50%;background:#3a4c43}
-.event.done{color:#fff}
-.event.done:before{background:var(--green)}
-.input{width:100%;padding:12px;border:1px solid #2b3c34;border-radius:11px;background:#0f1a16;color:#fff;font:inherit;margin:6px 0 12px}
-.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#fff;color:#10231a;padding:12px 16px;border-radius:12px;font-weight:800;display:none;z-index:50}
+.input{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:#0f1a16;color:#fff;font:inherit;margin:6px 0 12px}
+.input:focus{border-color:#33d17a;outline:0}
 label{font-size:13px;font-weight:700;color:#c6d4cd;display:block;margin-top:6px}
+.hidden{display:none!important}
+.order-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+.order-id{font-family:ui-monospace,monospace;color:#33d17a;font-weight:900}
+.comm{font-size:20px;font-weight:900;color:var(--gold)}
+.tot{color:#d9e8e0;font-weight:700}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.m{background:#0f1a16;border-radius:12px;padding:12px;text-align:center}
+.m b{display:block;font-size:22px;font-weight:900;margin-top:2px;color:#33d17a}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#fff;color:#10231a;padding:12px 16px;border-radius:12px;font-weight:800;display:none;z-index:50;max-width:90vw;text-align:center}
 </style>
 </head>
 <body>
 <div class="shell">
+
   <div class="top">
     <div class="dot" id="dot"></div>
     <div>
       <div class="brand">Obuasi<span>Go</span> · Rider</div>
       <div class="muted" id="riderName">Not signed in</div>
     </div>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <a href="/scan.html" class="btn secondary" style="text-decoration:none;display:inline-block;padding:9px 12px">📷 Scan</a>
       <button class="switch" id="sw" onclick="toggleOnline()"><span></span></button>
     </div>
   </div>
 
-  <div id="login" class="card">
-    <h2>Rider sign in</h2>
-    <p class="muted">Rider accounts are approved by ObuasiGo. Sign in with the phone number linked to your rider account.</p>
-    <label>Phone</label>
-    <input class="input" id="phone" placeholder="+233241234567">
-    <button class="btn primary" style="width:100%" onclick="sendOtp()" id="sendBtn">Send code</button>
-    <div id="otpStep" style="display:none;margin-top:12px">
-      <label>6-digit code</label>
-      <input class="input" id="code" maxlength="6" inputmode="numeric" placeholder="123456">
-      <button class="btn primary" style="width:100%" onclick="verifyOtp()">Verify &amp; enter rider mode</button>
+  <!-- Login -->
+  <div id="login">
+    <div class="card">
+      <h2>Rider sign in</h2>
+      <p class="muted">Enter your rider phone number to receive an OTP.</p>
+      <label>Phone</label>
+      <input class="input" id="phone" placeholder="+233241234567" value="+233244444444">
+      <button class="btn primary" style="width:100%" onclick="sendOtp()" id="sendBtn">Send code</button>
+      <div id="otpStep" class="hidden" style="margin-top:12px">
+        <label>6-digit code</label>
+        <input class="input" id="code" maxlength="6" inputmode="numeric" placeholder="123456">
+        <button class="btn primary" style="width:100%" onclick="verifyOtp()">Verify &amp; enter</button>
+      </div>
+    </div>
+    <div class="card">
+      <b>Not a rider yet?</b>
+      <p class="muted">Ask the ObuasiGo admin to set your account to <code>role='rider'</code>. Then sign in here.</p>
     </div>
   </div>
 
-  <div id="app" class="hidden">
+  <!-- Online verification step -->
+  <div id="onlineVerify" class="hidden">
     <div class="card">
-      <div class="row">
-        <div>
-          <span class="badge" id="onlineBadge">Offline</span>
-          <h2 id="reqTitle">Waiting for a request…</h2>
-          <p class="muted" id="reqSub">Go online to receive deliveries.</p>
-        </div>
-        <div class="earning" id="reqPrice">GH₵18</div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn primary" onclick="accept()">Accept delivery</button>
-        <button class="btn secondary" onclick="toast('Request skipped')">Skip</button>
-      </div>
+      <h2>Verify to go online</h2>
+      <p class="muted">A 4-digit code was sent to your phone. Enter it below.</p>
+      <div class="m" style="font-size:34px;letter-spacing:12px;font-weight:900;color:#33d17a;text-align:center" id="codeDisplay">—</div>
+      <label>Enter the code</label>
+      <input class="input" id="onlineCode" maxlength="4" inputmode="numeric" placeholder="1234">
+      <button class="btn primary" style="width:100%" onclick="verifyOnline()">Verify &amp; go online</button>
+      <button class="btn secondary" style="width:100%;margin-top:8px" onclick="cancelVerify()">Cancel</button>
     </div>
+  </div>
 
-    <div class="card" id="active" style="display:none">
-      <div class="row"><b>Active delivery</b><span class="badge gold" id="stepLabel">Accepted</span></div>
-      <div class="timeline" id="timeline"></div>
-      <button class="btn primary" style="width:100%;margin-top:10px" onclick="advance()">Advance step</button>
+  <!-- App -->
+  <div id="app" class="hidden">
+
+    <div class="grid3" id="summary"></div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:6px">
+        <b>Assigned orders</b>
+        <button class="btn secondary" onclick="loadAssigned()" style="padding:6px 10px;font-size:12px">Refresh</button>
+      </div>
+      <div id="assignedList"><p class="muted">Loading…</p></div>
     </div>
 
     <div class="chart-wrap">
-      <div class="row" style="margin-bottom:8px"><b>Earnings — last 7 days</b><span class="muted" id="total">—</span></div>
+      <div class="row" style="margin-bottom:8px">
+        <b>Earnings — last 7 days</b>
+        <span class="muted" id="total">—</span>
+      </div>
       <canvas id="chart"></canvas>
     </div>
 
     <div class="card" style="margin-top:14px">
-      <div class="muted">Today's earnings</div>
-      <div class="earning" id="today">—</div>
-      <p class="muted" id="stats">—</p>
+      <div class="row">
+        <div>
+          <div class="muted">Today's earnings</div>
+          <div class="earning" id="today">—</div>
+          <p class="muted" id="stats">—</p>
+        </div>
+        <button class="btn secondary" onclick="signOut()">Sign out</button>
+      </div>
     </div>
-
-    <button class="btn secondary" style="width:100%;margin-top:6px" onclick="signOut()">Sign out</button>
   </div>
 </div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-const state = { token:'', user:null, online:false, step:-1 };
-const STEPS = ['Accepted','Navigating to pickup','At restaurant','Food picked up','Delivering','Arrived','Completed'];
+const state = { token:'', user:null, online:false, assigned:[] };
 const money = n => 'GH₵' + Number(n||0).toFixed(2);
+
 function toast(m, ms=2400){ const t=$('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none', ms); }
-function authHeaders(){ return state.token ? { Authorization:'Bearer ' + state.token } : {}; }
+function authHeaders(){ return state.token ? { Authorization:'Bearer '+state.token } : {}; }
 async function api(path, opts={}){
   const r = await fetch('/api'+path, { ...opts, headers:{ 'Content-Type':'application/json', ...authHeaders(), ...(opts.headers||{}) } });
   const d = await r.json().catch(()=>({}));
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* --- Sign-in --- */
 async function sendOtp(){
   const phone = $('phone').value.trim();
   $('sendBtn').disabled = true;
   try {
     const d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
-    $('otpStep').style.display = 'block';
-    if (d.devOtp){ $('code').value = d.devOtp; toast('Dev OTP: ' + d.devOtp, 6000); }
+    $('otpStep').classList.remove('hidden');
+    if (d.devOtp){ $('code').value = d.devOtp; toast('Dev OTP: ' + d.devOtp, 5000); }
     else toast('Code sent');
   } catch(e){ toast(e.message); }
   $('sendBtn').disabled = false;
 }
-
 async function verifyOtp(){
   const phone = $('phone').value.trim(), code = $('code').value.trim();
   try {
     const d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code }) });
     state.token = d.token; state.user = d.user;
     localStorage.setItem('obg_rider_token', d.token);
-    if (!['rider','admin','superadmin'].includes(d.user.role)){
-      toast('This account is not a rider (' + d.user.role + ')'); return;
+    if (['rider','admin','superadmin'].indexOf(d.user.role) === -1){
+      toast('Not a rider account (' + d.user.role + ')'); return;
     }
     enterApp();
   } catch(e){ toast(e.message); }
@@ -147,6 +174,8 @@ function enterApp(){
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('riderName').textContent = state.user.full_name || state.user.phone;
+  loadSummary();
+  loadAssigned();
   loadEarnings();
 }
 
@@ -157,38 +186,101 @@ function signOut(){
   $('login').classList.remove('hidden');
 }
 
-function toggleOnline(){
-  state.online = !state.online;
-  $('sw').classList.toggle('on', state.online);
-  $('dot').classList.toggle('on', state.online);
-  $('onlineBadge').textContent = state.online ? 'Online' : 'Offline';
-  $('onlineBadge').className = 'badge' + (state.online?'':' gold');
-  $('reqTitle').textContent = state.online ? 'New request — Obuasi Kitchen → Ahinsan' : 'Waiting for a request…';
-  $('reqSub').textContent   = state.online ? '2.8 km · 12 min · Food delivery' : 'Go online to receive deliveries.';
-  toast(state.online ? 'You are online' : 'You are offline');
-}
-
-function accept(){
-  if (!state.online) return toast('Go online first');
-  state.step = 0;
-  $('active').style.display = 'block';
-  renderTimeline();
-  toast('Delivery accepted');
-}
-function advance(){
-  if (state.step < 0) return;
-  state.step = Math.min(state.step+1, STEPS.length-1);
-  renderTimeline();
-  if (state.step === STEPS.length-1){
-    toast('Delivery completed ✔ GH₵18 added');
-    loadEarnings();
+/* --- Online toggle with verification --- */
+async function toggleOnline(){
+  if (!state.online){
+    try {
+      const r = await api('/rider/online', { method:'POST' });
+      $('codeDisplay').textContent = r.code || '—';
+      $('onlineVerify').classList.remove('hidden');
+      $('app').classList.add('hidden');
+    } catch(e){ toast(e.message); }
+    return;
   }
-}
-function renderTimeline(){
-  $('stepLabel').textContent = STEPS[state.step];
-  $('timeline').innerHTML = STEPS.map((s,i)=>`<div class="event ${i<=state.step?'done':''}">${s}</div>`).join('');
+  state.online = false;
+  $('sw').classList.remove('on');
+  $('dot').classList.remove('on');
+  toast('You are offline');
 }
 
+async function verifyOnline(){
+  const code = $('onlineCode').value.trim();
+  try {
+    await api('/rider/verify-online', { method:'POST', body: JSON.stringify({ code }) });
+    state.online = true;
+    $('sw').classList.add('on');
+    $('dot').classList.add('on');
+    $('onlineVerify').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    toast('You are online ✓');
+    loadAssigned();
+  } catch(e){ toast(e.message); }
+}
+function cancelVerify(){
+  $('onlineVerify').classList.add('hidden');
+  $('app').classList.remove('hidden');
+}
+
+/* --- Assigned orders --- */
+async function loadAssigned(){
+  try {
+    state.assigned = await api('/rider/assigned');
+    renderAssigned();
+  } catch(e){ $('assignedList').innerHTML = '<p class="muted">' + esc(e.message) + '</p>'; }
+}
+function renderAssigned(){
+  const box = $('assignedList');
+  if (!state.assigned.length){ box.innerHTML = '<p class="muted">No active orders.</p>'; return; }
+  box.innerHTML = state.assigned.map(o => {
+    const items = (o.items || []).map(i => i.qty + '× ' + i.name).join(', ');
+    const mine = o.rider_phone === state.user.phone;
+    const canAccept = !o.rider_phone;
+    const canComplete = mine && ['Rider accepted','Food picked up','Going to customer','Arrived at customer','Customer PIN verified'].indexOf(o.status) !== -1;
+    return '<div class="order-card">'
+      + '<div class="row"><span class="order-id">#' + esc(o.id) + '</span><span class="badge gold">' + esc(o.status) + '</span></div>'
+      + '<div class="muted" style="margin:6px 0">' + esc(o.vendor) + ' → ' + esc((o.delivery_address && o.delivery_address.text) || 'Customer') + '</div>'
+      + '<div class="muted" style="margin-bottom:8px">' + esc(items) + '</div>'
+      + '<div class="row"><span class="tot">' + money(o.total) + '</span><span class="comm">+' + money(o.rider_commission || 15) + '</span></div>'
+      + (canAccept ? '<button class="btn primary" style="width:100%;margin-top:10px" onclick="acceptOrder(\'' + esc(o.id) + '\')">Accept · commission ' + money(15) + '</button>' : '')
+      + (mine && o.status === 'Rider accepted' ? '<button class="btn secondary" style="width:100%;margin-top:10px" onclick="toast(\'Scan the vendor QR to confirm pickup\')">📷 Go to /scan.html to confirm pickup</button>' : '')
+      + (canComplete ? '<button class="btn primary" style="width:100%;margin-top:10px" onclick="completeOrder(\'' + esc(o.id) + '\')">Mark as delivered · earn ' + money(o.rider_commission || 15) + '</button>' : '')
+      + '</div>';
+  }).join('');
+}
+
+async function acceptOrder(id){
+  const commission = Number(prompt('Commission for this order (GH₵):', '15'));
+  if (!commission || commission <= 0) return;
+  try {
+    await api('/rider/orders/' + id + '/accept', { method:'POST', body: JSON.stringify({ commission: commission }) });
+    toast('Order accepted');
+    loadAssigned();
+    loadSummary();
+  } catch(e){ toast(e.message); }
+}
+
+async function completeOrder(id){
+  try {
+    const r = await api('/rider/orders/' + id + '/complete', { method:'POST' });
+    toast('Delivered! +' + money(r.commission) + ' added to earnings');
+    loadAssigned();
+    loadSummary();
+    loadEarnings();
+  } catch(e){ toast(e.message); }
+}
+
+/* --- Summary --- */
+async function loadSummary(){
+  try {
+    const s = await api('/rider/summary');
+    $('summary').innerHTML =
+      '<div class="m">Assigned<b>' + s.assigned + '</b></div>'
+      + '<div class="m">Completed<b>' + s.completed + '</b></div>'
+      + '<div class="m">Earned<b>' + money(s.earnings) + '</b></div>';
+  } catch(e){}
+}
+
+/* --- Earnings --- */
 async function loadEarnings(){
   try {
     const e = await api('/rider/earnings');
@@ -196,7 +288,7 @@ async function loadEarnings(){
     $('today').textContent = money(e.today);
     $('stats').textContent = e.series.reduce((n,s)=>n+s.deliveries,0) + ' deliveries · 4.9★';
     drawChart(e.series);
-  } catch(err){ toast(err.message); }
+  } catch(e){}
 }
 
 function drawChart(series){
@@ -206,56 +298,44 @@ function drawChart(series){
   c.width = rect.width * dpr; c.height = 170 * dpr;
   const ctx = c.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  const W = rect.width, H = 170;
-  const pad = 22;
+  const W = rect.width, H = 170, pad = 22;
   const labels = series.map(s => new Date(s.day).toLocaleDateString(undefined,{weekday:'short'}));
   const values = series.map(s => s.amount);
-  const max = Math.max(...values, 20) * 1.2;
+  const max = Math.max.apply(null, values.concat([20])) * 1.2;
   const gap = 8;
   const bw = (W - pad*2 - gap*(values.length-1)) / values.length;
-
-  // grid
   ctx.strokeStyle = '#223029'; ctx.lineWidth = 1;
-  for (let i=0;i<=4;i++){
+  for (let i = 0; i <= 4; i++){
     const y = pad + (H - pad*2) * i/4;
-    ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W-pad, y); ctx.stroke();
   }
-
   const todayIdx = values.length - 1;
-  values.forEach((v,i)=>{
+  values.forEach(function(v, i){
     const h = (v/max) * (H - pad*2);
     const x = pad + i*(bw+gap);
     const y = H - pad - h;
-    ctx.fillStyle = i===todayIdx ? '#33d17a' : '#1f8a56';
-    const r = Math.min(6, bw/2);
+    ctx.fillStyle = i === todayIdx ? '#33d17a' : '#1f8a56';
     ctx.beginPath();
-    ctx.moveTo(x, y+r);
-    ctx.arcTo(x,y,x+r,y,r);
-    ctx.lineTo(x+bw-r,y);
-    ctx.arcTo(x+bw,y,x+bw,y+r,r);
-    ctx.lineTo(x+bw,H-pad);
-    ctx.lineTo(x,H-pad);
-    ctx.closePath(); ctx.fill();
-
+    ctx.rect(x, y, bw, h);
+    ctx.fill();
     ctx.fillStyle = '#9fb2a8'; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText(labels[i], x+bw/2, H-6);
+    ctx.fillText(labels[i], x + bw/2, H - 6);
     ctx.fillStyle = '#d9e8e0'; ctx.font = 'bold 11px system-ui';
-    ctx.fillText('₵'+Math.round(v), x+bw/2, y-5);
+    ctx.fillText('₵' + Math.round(v), x + bw/2, y - 5);
   });
 }
-window.addEventListener('resize', ()=>{ if (state.token) loadEarnings(); });
+window.addEventListener('resize', function(){ if (state.token) loadEarnings(); });
 
-/* Restore session */
-(async function(){
+/* --- Restore session --- */
+(function(){
   const t = localStorage.getItem('obg_rider_token');
   if (!t) return;
   state.token = t;
-  try {
-    const d = await api('/me');
+  api('/me').then(function(d){
     state.user = d.user;
-    if (['rider','admin','superadmin'].includes(d.user.role)) enterApp();
+    if (['rider','admin','superadmin'].indexOf(d.user.role) !== -1) enterApp();
     else signOut();
-  } catch { signOut(); }
+  }).catch(function(){ signOut(); });
 })();
 </script>
 </body>

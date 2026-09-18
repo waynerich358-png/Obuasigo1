@@ -2,248 +2,213 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ObuasiGo · Scan Guest QR</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ObuasiGo · Scan</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:#0e1714;color:#fff;min-height:100vh}
+body{margin:0;font-family:system-ui,sans-serif;background:#0e1714;color:#fff;min-height:100vh}
 .top{background:#087443;padding:14px 18px;font-weight:900;font-size:17px;display:flex;align-items:center;gap:10px}
 .top span{color:#f3a11b}
 .top a{margin-left:auto;color:#fff;text-decoration:none;font-size:13px;background:#00000022;padding:6px 12px;border-radius:999px}
 .wrap{max-width:520px;margin:auto;padding:18px}
 .card{background:#18251f;border:1px solid #2b3c34;border-radius:18px;padding:18px;margin-bottom:14px}
 .muted{color:#9fb2a8;font-size:13.5px}
-#reader,#reader2{width:100%;border-radius:14px;overflow:hidden;background:#000;min-height:260px;position:relative}
-#reader video,#reader2 video{width:100%!important;height:auto!important;display:block;border-radius:14px}
-.fallback{display:flex;gap:8px;margin-top:8px}
-.input{flex:1;padding:13px;border:1px solid #2b3c34;border-radius:11px;background:#0f1a16;color:#fff;font:inherit;outline:0;text-transform:uppercase}
+#reader{width:100%;border-radius:14px;overflow:hidden;background:#000;min-height:260px;position:relative}
+#reader video{width:100%!important;height:auto!important;display:block;border-radius:14px}
+.input{width:100%;padding:13px;border:1px solid #2b3c34;border-radius:11px;background:#0f1a16;color:#fff;font:inherit;outline:0;text-transform:uppercase}
 .input:focus{border-color:#33d17a}
 .btn{padding:13px 16px;border-radius:11px;font-weight:800;border:0;cursor:pointer;background:#087443;color:#fff;font-size:14px}
-.btn.secondary{background:#223029;color:#d9e8e0}
 .btn.gold{background:#f3a11b;color:#10231a}
+.btn.sec{background:#223029;color:#d9e8e0}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .badge{display:inline-block;padding:5px 10px;border-radius:999px;background:#1f8a5633;color:#33d17a;font-size:12px;font-weight:800}
-.badge.gold{background:#fff4e033;color:#f3a11b}
 .result{text-align:center;padding:20px;border-radius:16px;margin-top:14px;display:none}
 .result.ok{display:block;background:#0e7a3f;color:#fff}
 .result.err{display:block;background:#a52b2b;color:#fff}
 .result b{display:block;font-size:20px;margin-bottom:4px}
 .status{padding:10px 12px;border-radius:11px;background:#0f1a16;color:#9fb2a8;font-size:13px;margin-top:10px;text-align:center}
-.scanner-frame{position:relative}
-.scanner-frame::after{content:"";position:absolute;inset:12%;border:3px dashed #33d17a;border-radius:14px;pointer-events:none}
-.laser{position:absolute;left:12%;right:12%;height:3px;background:#33d17a;border-radius:3px;top:15%;animation:sweep 1.8s ease-in-out infinite;z-index:5;pointer-events:none}
-@keyframes sweep{0%,100%{top:15%}50%{top:80%}}
 </style>
 </head>
 <body>
-
-<div class="top">Obuasi<span>Go</span> · Guest Check-in
-  <a href="/portal.html">← Portal</a>
-</div>
-
+<div class="top">Obuasi<span>Go</span> · Scan</div>
 <div class="wrap">
-
   <div class="card">
-    <span class="badge">HOTEL / ADMIN</span>
-    <h2 style="margin:10px 0 4px">Scan guest QR</h2>
-    <p class="muted">Point the camera at the guest's QR. It checks them in automatically.</p>
-    <div class="scanner-frame">
-      <div id="reader"></div>
-      <div class="laser"></div>
-    </div>
+    <span class="badge" id="roleHint">—</span>
+    <h2 style="margin:10px 0 4px">Point at a QR code</h2>
+    <p class="muted">Hotel staff scan guest check-in QRs. Riders scan vendor pickup QRs.</p>
+    <div id="reader"></div>
     <div class="status" id="status">Starting camera…</div>
     <div class="row" style="margin-top:10px">
-      <button class="btn secondary" onclick="startNative()">🔄 Restart camera</button>
-      <button class="btn secondary" onclick="stopScanner()">⏸ Stop</button>
+      <button class="btn sec" onclick="startNative()">🔄 Restart</button>
+      <button class="btn sec" onclick="stopScanner()">⏸ Stop</button>
     </div>
   </div>
-
   <div class="card">
     <b>Manual entry</b>
-    <p class="muted">Type the code shown under the QR (e.g. <code>OBG-A1B2C3D4</code>).</p>
-    <div class="fallback">
-      <input class="input" id="manualCode" placeholder="OBG-XXXXXXXX" autocomplete="off">
-      <button class="btn gold" onclick="manualCheckin()">Check in</button>
+    <p class="muted">Type the code under the QR if scanning fails.</p>
+    <div class="row">
+      <input class="input" id="manualCode" placeholder="OBG-XXXX or PCK-XXXX">
+      <button class="btn gold" onclick="manual()">Submit</button>
     </div>
   </div>
-
-  <div class="card" id="recentCard" style="display:none">
-    <b>Recent check-ins</b>
-    <div id="recent" class="muted" style="margin-top:8px">—</div>
-  </div>
-
   <div class="result" id="result"></div>
 </div>
-
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const token = () => localStorage.getItem('obg_staff_token') || '';
 let scanner = null;
-let recent = [];
+let userRole = 'hotel';
 
-function status(msg, color){
-  const s = $('status');
-  s.textContent = msg;
-  if (color) s.style.color = color;
-}
-function showResult(ok, title, sub){
+/* Detect role from stored token */
+const riderTok = localStorage.getItem('obg_rider_token');
+const staffTok = localStorage.getItem('obg_staff_token');
+let token = staffTok || riderTok || '';
+
+function status(m, c){ $('status').textContent = m; if (c) $('status').style.color = c; }
+function showResult(ok, t, s){
   const r = $('result');
   r.className = 'result ' + (ok ? 'ok' : 'err');
-  r.innerHTML = '<b>' + title + '</b><div>' + (sub || '') + '</div>';
-  setTimeout(() => { r.className = 'result'; }, 6000);
+  r.innerHTML = '<b>' + t + '</b><div>' + (s || '') + '</div>';
+  setTimeout(function(){ r.className = 'result'; }, 6000);
 }
 
-async function api(path, opts = {}){
-  const res = await fetch('/api' + path, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token() ? { Authorization: 'Bearer ' + token() } : {}),
-      ...(opts.headers || {})
-    }
-  });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(d.error || 'Request failed');
+async function api(path, opts){
+  const r = await fetch('/api' + path, Object.assign({}, opts, {
+    headers: Object.assign({ 'Content-Type':'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}, (opts && opts.headers) || {})
+  }));
+  const d = await r.json().catch(function(){ return {}; });
+  if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
 
-/* Try native BarcodeDetector first (Chrome Android), fall back to html5-qrcode */
+/* Figure out who is logged in */
+(async function(){
+  if (!token){ status('Sign in first.', '#f3a11b'); setTimeout(function(){ location.href='/portal.html'; }, 2000); return; }
+  try {
+    const me = await api('/me');
+    userRole = me.user.role;
+    $('roleHint').textContent = userRole.toUpperCase() + ' · ' + me.user.phone;
+    startNative();
+  } catch(e){
+    status('Session expired. Sign in again.', '#f3a11b');
+    setTimeout(function(){ location.href='/portal.html'; }, 2000);
+  }
+})();
+
 async function startNative(){
-  if ('BarcodeDetector' in window) return startWithBarcodeDetector();
-  return startWithHtml5Qrcode();
+  if ('BarcodeDetector' in window) return startBD();
+  return startHtml5();
 }
 
-async function startWithBarcodeDetector(){
+async function startBD(){
   try {
     status('Requesting camera…');
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const reader = $('reader');
     reader.innerHTML = '';
-    const video = document.createElement('video');
-    video.autoplay = true; video.playsInline = true; video.muted = true;
-    video.srcObject = stream;
-    video.style.width = '100%';
-    video.style.display = 'block';
-    video.style.borderRadius = '14px';
-    reader.appendChild(video);
-
-    await video.play();
-
-    const detector = new BarcodeDetector({ formats: ['qr_code'] });
-    status('Scanning… point at a guest QR', '#33d17a');
-
-    const loop = async () => {
-      if (!video.isConnected){ stream.getTracks().forEach(t => t.stop()); return; }
+    const v = document.createElement('video');
+    v.autoplay = true; v.playsInline = true; v.muted = true;
+    v.srcObject = stream;
+    v.style.width = '100%'; v.style.display = 'block'; v.style.borderRadius = '14px';
+    reader.appendChild(v);
+    await v.play();
+    const det = new BarcodeDetector({ formats: ['qr_code'] });
+    status('Scanning…', '#33d17a');
+    const loop = async function(){
+      if (!v.isConnected){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
       try {
-        const codes = await detector.detect(video);
+        const codes = await det.detect(v);
         if (codes.length){
           const text = codes[0].rawValue;
-          handleScan(text);
-          stream.getTracks().forEach(t => t.stop());
+          stream.getTracks().forEach(function(t){ t.stop(); });
+          handle(text);
           return;
         }
-      } catch {}
+      } catch(e){}
       requestAnimationFrame(loop);
     };
     loop();
-  } catch (e){
-    status('Native camera failed — trying fallback…', '#f3a11b');
-    setTimeout(startWithHtml5Qrcode, 400);
+  } catch(e){
+    status('Native failed — trying fallback…', '#f3a11b');
+    setTimeout(startHtml5, 400);
   }
 }
 
-function startWithHtml5Qrcode(){
-  if (typeof Html5Qrcode === 'undefined'){
-    status('Scanner library still loading… check your internet.', '#f3a11b');
-    return;
-  }
-  const reader = $('reader');
-  reader.innerHTML = '';
-  if (scanner){ try { scanner.clear(); } catch {} scanner = null; }
+function startHtml5(){
+  if (typeof Html5Qrcode === 'undefined'){ status('Scanner loading…'); return; }
+  $('reader').innerHTML = '';
+  if (scanner){ try { scanner.clear(); } catch(e){} scanner = null; }
   scanner = new Html5Qrcode('reader');
-  status('Starting camera…');
   scanner.start(
     { facingMode: 'environment' },
     { fps: 10, qrbox: { width: 240, height: 240 } },
-    async (text) => { await handleScan(text); },
-    () => {}
-  ).then(() => status('Scanning… point at a guest QR', '#33d17a'))
-   .catch(err => status('Camera error: ' + err.message, '#f0a0a0'));
+    function(text){ handle(text); },
+    function(){}
+  ).then(function(){ status('Scanning…', '#33d17a'); })
+   .catch(function(err){ status('Camera error: ' + err.message, '#f0a0a0'); });
 }
 
 function stopScanner(){
-  if (scanner){ try { scanner.stop().then(() => { scanner = null; status('Camera stopped'); }); } catch { scanner = null; status('Camera stopped'); } }
-  const video = document.querySelector('#reader video');
-  if (video && video.srcObject){ video.srcObject.getTracks().forEach(t => t.stop()); }
+  if (scanner){ try { scanner.stop().then(function(){ scanner = null; status('Stopped'); }); } catch(e){ scanner = null; } }
+  const v = document.querySelector('#reader video');
+  if (v && v.srcObject) v.srcObject.getTracks().forEach(function(t){ t.stop(); });
 }
 
-let lastScan = { text: '', at: 0 };
-async function handleScan(text){
+let lastScan = { t:'', at:0 };
+async function handle(text){
   const now = Date.now();
-  if (text === lastScan.text && now - lastScan.at < 4000) return;
-  lastScan = { text, at: now };
-
+  if (text === lastScan.t && now - lastScan.at < 4000) return;
+  lastScan = { t: text, at: now };
   stopScanner();
 
+  /* Riders call /rider/pickup. Hotel/admin call /portal/checkin. */
+  const isRider = userRole === 'rider';
+  const path = isRider ? '/rider/pickup' : '/portal/checkin';
+
   try {
-    const r = await api('/portal/checkin', {
-      method: 'POST',
-      body: JSON.stringify({ qr: text })
-    });
-    const b = r.booking || {};
-    const sub = b.hotel ? b.hotel + ' · ' + (b.room || '') : '';
-    showResult(true, '✓ Checked in', b.id ? '#' + b.id + ' ' + sub : sub);
-    status('✓ ' + (b.id || 'Guest checked in'), '#33d17a');
-    addRecent({ id: b.id, at: new Date().toLocaleTimeString(), ok: true });
-    setTimeout(() => { startNative(); }, 2500);
-  } catch (e){
-    showResult(false, '✗ Not valid', e.message);
-    status('Scan failed: ' + e.message, '#f0a0a0');
-    addRecent({ id: e.message, at: new Date().toLocaleTimeString(), ok: false });
-    setTimeout(() => { startNative(); }, 2500);
+    const r = await api(path, { method:'POST', body: JSON.stringify({ qr: text }) });
+    if (isRider){
+      const o = r.order || {};
+      showResult(true, '✓ Pickup confirmed', '#' + (o.id || '') + ' · ' + (o.vendor || ''));
+      status('✓ Pickup confirmed', '#33d17a');
+    } else {
+      const b = r.booking || {};
+      showResult(true, '✓ Checked in', '#' + (b.id || '') + ' ' + (b.hotel || ''));
+      status('✓ Guest checked in', '#33d17a');
+    }
+    setTimeout(startNative, 2500);
+  } catch(e){
+    showResult(false, '✗ ' + e.message, '');
+    status(e.message, '#f0a0a0');
+    setTimeout(startNative, 2500);
   }
 }
 
-async function manualCheckin(){
+async function manual(){
   const code = ($('manualCode').value || '').trim().toUpperCase();
   if (!code) return status('Enter a code', '#f3a11b');
+  const isRider = userRole === 'rider';
   try {
-    const r = await api('/portal/checkin', { method:'POST', body: JSON.stringify({ code }) });
-    const b = r.booking || {};
-    showResult(true, '✓ Checked in', '#' + (b.id || '') + ' ' + (b.hotel || ''));
-    status('✓ Guest checked in', '#33d17a');
+    const body = isRider ? { code: code } : { code: code };
+    const path = isRider ? '/rider/pickup' : '/portal/checkin';
+    const r = await api(path, { method:'POST', body: JSON.stringify(body) });
+    if (isRider){
+      const o = r.order || {};
+      showResult(true, '✓ Pickup confirmed', '#' + (o.id || ''));
+      status('✓ Pickup confirmed', '#33d17a');
+    } else {
+      const b = r.booking || {};
+      showResult(true, '✓ Checked in', '#' + (b.id || ''));
+      status('✓ Guest checked in', '#33d17a');
+    }
     $('manualCode').value = '';
-    addRecent({ id: b.id, at: new Date().toLocaleTimeString(), ok: true });
   } catch(e){
     showResult(false, '✗ ' + e.message, '');
     status(e.message, '#f0a0a0');
   }
 }
 
-function addRecent(item){
-  recent.unshift(item);
-  recent = recent.slice(0, 5);
-  $('recentCard').style.display = 'block';
-  $('recent').innerHTML = recent.map(r =>
-    `<div style="padding:6px 0;border-bottom:1px solid #2b3c34;display:flex;justify-content:space-between">
-      <span style="color:${r.ok ? '#33d17a' : '#f0a0a0'}">${r.ok ? '✓' : '✗'} ${r.id || ''}</span>
-      <span style="color:#6b766f">${r.at}</span>
-    </div>`).join('');
-}
-
-/* Boot */
-window.addEventListener('load', () => {
-  if (!token()){
-    status('Sign in to the portal first.', '#f3a11b');
-    setTimeout(() => { location.href = '/portal.html'; }, 2000);
-    return;
-  }
-  startNative();
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopScanner();
-});
+document.addEventListener('visibilitychange', function(){ if (document.hidden) stopScanner(); });
 </script>
 </body>
 </html>

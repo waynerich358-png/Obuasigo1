@@ -225,6 +225,24 @@ async function render(){
       <div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or delivery PINs.</div>
       <div class="card">
         <h3 style="margin-top:0">Incoming orders</h3>
+        ${orders.length ? orders.map(function(o){
+          const approved = !!o.pickup_token;
+          return '<div style="border-bottom:1px solid #eef2f0;padding:12px 0">'
+            + '<div style="display:flex;justify-content:space-between"><b>#' + esc(o.id) + '</b><span class="badge gold">' + esc(o.status) + '</span></div>'
+            + '<table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>'
+            + o.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty*i.price) + '</td></tr>'; }).join('')
+            + '</tbody></table>'
+            + '<div style="text-align:right;margin-top:6px"><b>Total: ' + money(o.total) + '</b></div>'
+            + (o.status === 'Order created' || o.status === 'Payment confirmed'
+                ? '<button class="btn" style="width:100%;margin-top:10px" onclick="approveOrder(\'' + esc(o.id) + '\')">✓ Approve & generate pickup QR</button>'
+                : '')
+            + (approved
+                ? '<button class="btn sec" style="width:100%;margin-top:10px" onclick="showPickupQR(\'' + esc(o.id) + '\')">📷 Show pickup QR (' + esc(o.pickup_token) + ')</button>'
+                : '')
+            + '</div>';
+        }).join('') : '<p class="muted">No incoming orders yet.</p>'}
+      </div>
+        <h3 style="margin-top:0">Incoming orders</h3>
         ${orders.length ? orders.map(o=>`
           <div style="border-bottom:1px solid #eef2f0;padding:12px 0">
             <div style="display:flex;justify-content:space-between"><b>#${esc(o.id)}</b><span class="badge gold">${esc(o.status)}</span></div>
@@ -253,6 +271,30 @@ async function render(){
 }
 
 /* Restore session */
+async function approveOrder(id){
+  try {
+    await api('/orders/' + id + '/vendor-approve', { method:'PATCH' });
+    setStatus && setStatus('Order approved ✓');
+    render();
+  } catch(e){ alert(e.message); }
+}
+
+async function showPickupQR(id){
+  try {
+    const d = await api('/orders/' + id + '/pickup-qr');
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;background:#000c;z-index:999;display:flex;align-items:center;justify-content:center;padding:20px';
+    box.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:22px;text-align:center;max-width:420px;width:100%;color:#10231a">'
+      + '<h2 style="margin:0 0 6px">Rider pickup QR</h2>'
+      + '<p style="color:#6d7b74;font-size:13px">Show this to the rider. They scan it or enter the code to confirm pickup.</p>'
+      + '<img src="' + d.png + '" style="width:100%;max-width:280px;margin:12px auto;display:block">'
+      + '<div style="font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:900;background:#f2f6f4;padding:10px;border-radius:12px;margin:8px 0">' + d.code + '</div>'
+      + '<button class="btn sec" style="width:100%;margin-top:12px" onclick="this.parentElement.parentElement.remove()">Close</button>'
+      + '</div>';
+    document.body.appendChild(box);
+  } catch(e){ alert(e.message); }
+}
 (function(){
   const t = localStorage.getItem('obg_staff_token');
   if (!t) return;
