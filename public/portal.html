@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ObuasiGo Staff Portal</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:#f5f7f6;color:#10231a}
+.top{background:#087443;color:#fff;padding:16px 22px;font-weight:900;font-size:20px}
+.top span{color:#f3a11b}
+.wrap{max-width:1100px;margin:auto;padding:22px}
+.card{background:#fff;border:1px solid #e7ece9;border-radius:16px;padding:20px;margin-bottom:14px}
+.btn{padding:12px 16px;border-radius:10px;font-weight:800;border:0;cursor:pointer;background:#087443;color:#fff;font-size:14px}
+.btn.sec{background:#edf3ef;color:#087443}
+.btn.wide{width:100%}
+.input{width:100%;padding:13px;border:1px solid #dce4df;border-radius:10px;margin:6px 0 14px;font:inherit}
+label{font-size:13px;font-weight:700;color:#374b41;display:block;margin-top:6px}
+.badge{display:inline-block;padding:5px 10px;border-radius:999px;background:#edf7f1;color:#087443;font-size:12px;font-weight:800}
+.badge.gold{background:#fff4e0;color:#a86a00}
+.muted{color:#6d7b74;font-size:14px}
+.mg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.m{background:#fff;border:1px solid #e7ece9;border-radius:14px;padding:16px}
+.m b{display:block;font-size:24px;font-weight:900;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eef2f0}
+th{color:#6d7b74;font-size:12px;text-transform:uppercase}
+.warn{background:#fff4e0;color:#7a4b00;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px}
+.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer}
+.role .em{font-size:42px}
+.role b{display:block;margin-top:8px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="top">Obuasi<span>Go</span> · Staff Portal</div>
+
+<div class="wrap">
+  <div id="login">
+    <div class="card" style="text-align:center">
+      <span class="badge">SECURE STAFF ACCESS</span>
+      <h1 style="margin:10px 0">Staff sign in</h1>
+      <p class="muted">Use the phone number registered to your staff account.</p>
+      <label style="text-align:left">Phone number</label>
+      <input class="input" id="phone" placeholder="+233241234567">
+      <button class="btn wide" id="sendBtn" onclick="sendOtp()">Send code</button>
+      <div id="otpStep" class="hidden" style="margin-top:14px">
+        <label style="text-align:left">6-digit code</label>
+        <input class="input" id="code" placeholder="123456" maxlength="6">
+        <button class="btn wide" onclick="verifyOtp()">Verify &amp; sign in</button>
+      </div>
+    </div>
+    <div class="card">
+      <b>Demo roles</b>
+      <p class="muted">Tap to fill the phone field, then Send code.</p>
+      <div class="roles">
+        <div class="role" onclick="fill('+233241111111')"><div class="em">🛡️</div><b>Admin</b></div>
+        <div class="role" onclick="fill('+233242222222')"><div class="em">🍽️</div><b>Vendor</b></div>
+        <div class="role" onclick="fill('+233243333333')"><div class="em">🏨</div><b>Hotel</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dash" class="hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <span class="badge" id="roleBadge">—</span>
+        <h2 id="title" style="margin:6px 0 0">—</h2>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="/scan.html" class="btn sec" style="text-decoration:none;display:inline-block">📷 Scan QR</a>
+        <button class="btn sec" onclick="signOut()">Sign out</button>
+      </div>
+    </div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = { token:'', user:null };
+const money = n => 'GH₵' + Number(n||0).toFixed(2);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function authHeaders(){ return state.token ? { Authorization:'Bearer '+state.token } : {}; }
+async function api(path, opts={}){
+  const r = await fetch('/api'+path, { ...opts, headers:{ 'Content-Type':'application/json', ...authHeaders(), ...(opts.headers||{}) } });
+  const d = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+function fill(p){ $('phone').value = p; }
+
+async function sendOtp(){
+  const phone = $('phone').value.trim();
+  $('sendBtn').disabled = true;
+  try {
+    const d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
+    $('otpStep.user').classList.remove('hidden');
+    if (.d.devOtp){ $('code').rolevalue = d.dev)Otp; alert('Dev OTP ===: ' + d.devO -tp); }
+    else alert('Code sent');
+  } catch(e){ alert(e.message); }
+  $('sendBtn').disabled = false;
+}
+
+async function verifyOtp(){
+  const phone = $('phone').value.trim(), code = $('code').value.trim();
+  try {
+    const d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code }) });
+    state.token = d.token;
+    state.user = d.user;
+    localStorage.setItem('obg_staff_token', d.token);
+    if (['admin','superadmin','vendor','hotel'].indexOf(d1){
+      alert('Not a staff account: ' + d.user.role);
+      return;
+    }
+    enter();
+  } catch(e){ alert(e.message); }
+}
+
+function enter(){
+  $('login').classList.add('hidden');
+  $('dash').classList.remove('hidden');
+  const labels = { admin:'Administrator', superadmin:'Superadmin', vendor:'Vendor', hotel:'Hotel' };
+  $('roleBadge').textContent = labels[state.user.role] || state.user.role;
+  $('title').textContent = (labels[state.user.role] || state.user.role) + ' dashboard';
+  render();
+}
+
+function signOut(){
+  state.token=''; state.user=null;
+  localStorage.removeItem('obg_staff_token');
+  $('dash').classList.add('hidden');
+  $('login').classList.remove('hidden');
+}
+
+async function render(){
+  const role = state.user.role;
+  const box = $('body');
+
+  if (role === 'admin' || role === 'superadmin'){
+    const o = await api('/portal/overview').catch(()=>({}));
+    const orders = await api('/portal/orders').catch(()=>[]);
+    const bookings = await api('/portal/bookings').catch(()=>[]);
+    box.innerHTML = `
+      <div class="mg">
+        <div class="m">Customers<b>${o.customers||0}</b></div>
+        <div class="m">Riders<b>${o.riders||0}</b></div>
+        <div class="m">Orders<b>${o.orders||0}</b></div>
+        <div class="m">Revenue<b>${money(o.revenue||0)}</b></div>
+        <div class="m">Bookings<b>${o.bookings||0}</b></div>
+        <div class="m">Checked-in<b>${o.checkedIn||0}</b></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Recent orders</h3>
+        ${orders.length ? `<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>
+          ${orders.slice(0,20).map(o=>`<tr><td>#${esc(o.id)}</td><td>${esc(o.vendor)}</td><td>${esc(o.customer_phone)}</td><td>${money(o.total)}</td><td><span class="badge">${esc(o.status)}</span></td></tr>`).join('')}
+        </tbody></table>` : '<p class="muted">No orders yet.</p>'}
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Hotel bookings</h3>
+        ${bookings.length ? `<table><thead><tr><th>ID</th><th>Hotel</th><th>Code</th><th>Status</th></tr></thead><tbody>
+          ${bookings.slice(0,20).map(b=>`<tr><td>#${esc(b.id)}</td><td>${esc(b.hotel)}</td><td style="font-family:monospace">${esc(b.checkin_code||'')}</td><td><span class="badge ${b.status==='CHECKED IN'?'':'gold'}">${esc(b.status)}</span></td></tr>`).join('')}
+        </tbody></table>` : '<p class="muted">No bookings yet.</p>'}
+      </div>`;
+  }
+
+  else if (role === 'vendor'){
+    const vendor = 'Obuasi Kitchen';
+    const orders = await api('/portal/orders?vendor=' + encodeURIComponent(vendor)).catch(()=>[]);
+    box.innerHTML = `
+      <div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or delivery PINs.</div>
+      <div class="card">
+        <h3 style="margin-top:0">Incoming orders</h3>
+        ${orders.length ? orders.map(o=>`
+          <div style="border-bottom:1px solid #eef2f0;padding:12px 0">
+            <div style="display:flex;justify-content:space-between"><b>#${esc(o.id)}</b><span class="badge gold">${esc(o.status)}</span></div>
+            <table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>
+              ${o.items.map(i=>`<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${money(i.qty*i.price)}</td></tr>`).join('')}
+            </tbody></table>
+            <div style="text-align:right;margin-top:6px"><b>Total: ${money(o.total)}</b></div>
+          </div>`).join('') : '<p class="muted">No incoming orders yet.</p>'}
+      </div>`;
+  }
+
+  else if (role === 'hotel'){
+    const hotel = 'Obuasi Royal Hotel';
+    const bookings = await api('/portal/bookings?hotel=' + encodeURIComponent(hotel)).catch(()=>[]);
+    box.innerHTML = `
+      <div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>
+      <div class="card" style="text-align:center">
+        <a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Bookings</h3>
+        ${bookings.length ? `<table><thead><tr><th>ID</th><th>Room</th><th>Stay</th><th>Code</th><th>Status</th></tr></thead><tbody>
+          ${bookings.map(b=>`<tr><td>#${esc(b.id)}</td><td>${esc(b.room)}</td><td>${esc(b.check_in||'')} → ${esc(b.check_out||'')}</td><td style="font-family:monospace">${esc(b.checkin_code||'')}</td><td><span class="badge ${b.status==='CHECKED IN'?'':'gold'}">${esc(b.status)}</span></td></tr>`).join('')}
+        </tbody></table>` : '<p class="muted">No bookings yet.</p>'}
+      </div>`;
+  }
+}
+
+// Restore session
+(function(){
+  const t = localStorage.getItem('obg_staff_token');
+  if (!t) return;
+  state.token = t;
+  api('/me').then(d => {
+    state.user = d.user;
+    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) !== -1) enter();
+    else signOut();
+  }).catch(()=>{ signOut(); });
+})();
+</script>
+</body>
+</html>
