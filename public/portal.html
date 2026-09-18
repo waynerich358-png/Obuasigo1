@@ -27,10 +27,13 @@ th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eef2f0}
 th{color:#6d7b74;font-size:12px;text-transform:uppercase}
 .warn{background:#fff4e0;color:#7a4b00;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
 .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px}
-.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer}
+.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer;transition:.15s}
+.role:active{border-color:#087443;transform:scale(.98)}
 .role .em{font-size:42px}
 .role b{display:block;margin-top:8px}
+.role small{display:block;color:#6d7b74;font-size:12px;margin-top:4px}
 .hidden{display:none}
+.status{background:#eef4f1;color:#374b41;padding:10px 12px;border-radius:10px;font-size:13px;margin-top:10px;text-align:center}
 </style>
 </head>
 <body>
@@ -42,24 +45,40 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
     <div class="card" style="text-align:center">
       <span class="badge">SECURE STAFF ACCESS</span>
       <h1 style="margin:10px 0">Staff sign in</h1>
-      <p class="muted">Use the phone number registered to your staff account.</p>
-      <label style="text-align:left">Phone number</label>
-      <input class="input" id="phone" placeholder="+233241234567">
-      <button class="btn wide" id="sendBtn" onclick="sendOtp()">Send code</button>
-      <div id="otpStep" class="hidden" style="margin-top:14px">
-        <label style="text-align:left">6-digit code</label>
-        <input class="input" id="code" placeholder="123456" maxlength="6">
-        <button class="btn wide" onclick="verifyOtp()">Verify &amp; sign in</button>
-      </div>
-    </div>
-    <div class="card">
-      <b>Demo roles</b>
-      <p class="muted">Tap to fill the phone field, then Send code.</p>
+      <p class="muted">Tap your role below to sign in instantly.</p>
+
       <div class="roles">
-        <div class="role" onclick="fill('+233241111111')"><div class="em">🛡️</div><b>Admin</b></div>
-        <div class="role" onclick="fill('+233242222222')"><div class="em">🍽️</div><b>Vendor</b></div>
-        <div class="role" onclick="fill('+233243333333')"><div class="em">🏨</div><b>Hotel</b></div>
+        <div class="role" onclick="quickLogin('+233241111111','admin')">
+          <div class="em">🛡️</div><b>Admin</b>
+          <small>Full overview</small>
+        </div>
+        <div class="role" onclick="quickLogin('+233242222222','vendor')">
+          <div class="em">🍽️</div><b>Vendor</b>
+          <small>Obuasi Kitchen</small>
+        </div>
+        <div class="role" onclick="quickLogin('+233243333333','hotel')">
+          <div class="em">🏨</div><b>Hotel</b>
+          <small>Obuasi Royal Hotel</small>
+        </div>
       </div>
+
+      <div id="status" class="status" style="display:none"></div>
+
+      <hr style="border:0;border-top:1px solid #eef2f0;margin:20px 0">
+
+      <details>
+        <summary style="cursor:pointer;color:#6d7b74;font-size:13px">Sign in with a different number</summary>
+        <div style="margin-top:14px;text-align:left">
+          <label>Phone number</label>
+          <input class="input" id="phone" placeholder="+233241234567">
+          <button class="btn wide" id="sendBtn" onclick="sendOtp()">Send code</button>
+          <div id="otpStep" class="hidden" style="margin-top:14px">
+            <label>6-digit code</label>
+            <input class="input" id="code" placeholder="123456" maxlength="6">
+            <button class="btn wide" onclick="verifyOtp()">Verify &amp; sign in</button>
+          </div>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -91,33 +110,64 @@ async function api(path, opts={}){
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
-function fill(p){ $('phone').value = p; }
+function setStatus(msg){ const s = $('status'); s.style.display = 'block'; s.textContent = msg; }
 
+/* ---------- One-tap demo login ---------- */
+async function quickLogin(phone, expectedRole){
+  setStatus('Sending code to ' + phone + '…');
+  try {
+    const a = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
+    if (!a.devOtp){
+      setStatus('OTP sent. Enter it in the form below.');
+      $('phone').value = phone;
+      $('otpStep').classList.remove('hidden');
+      return;
+    }
+    setStatus('Code received: ' + a.devOtp + ' · verifying…');
+
+    const b = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code: a.devOtp }) });
+    state.token = b.token;
+    state.user = b.user;
+    localStorage.setItem('obg_staff_token', b.token);
+
+    if (b.user.role === 'customer' && expectedRole !== 'customer'){
+      setStatus('⚠ This number is not a ' + expectedRole + ' yet. Its role is "' + b.user.role + '".');
+      return;
+    }
+    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){
+      setStatus('⚠ Role "' + b.user.role + '" cannot access the staff portal.');
+      return;
+    }
+    enter();
+  } catch(e){
+    setStatus('⚠ ' + e.message);
+  }
+}
+
+/* ---------- Manual OTP ---------- */
 async function sendOtp(){
   const phone = $('phone').value.trim();
   $('sendBtn').disabled = true;
   try {
     const d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
-    $('otpStep.user').classList.remove('hidden');
-    if (.d.devOtp){ $('code').rolevalue = d.dev)Otp; alert('Dev OTP ===: ' + d.devO -tp); }
-    else alert('Code sent');
-  } catch(e){ alert(e.message); }
+    $('otpStep').classList.remove('hidden');
+    if (d.devOtp){ $('code').value = d.devOtp; setStatus('Dev OTP: ' + d.devOtp); }
+    else setStatus('Code sent');
+  } catch(e){ setStatus(e.message); }
   $('sendBtn').disabled = false;
 }
-
 async function verifyOtp(){
   const phone = $('phone').value.trim(), code = $('code').value.trim();
   try {
     const d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone, code }) });
-    state.token = d.token;
-    state.user = d.user;
+    state.token = d.token; state.user = d.user;
     localStorage.setItem('obg_staff_token', d.token);
-    if (['admin','superadmin','vendor','hotel'].indexOf(d1){
-      alert('Not a staff account: ' + d.user.role);
+    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1){
+      setStatus('Not a staff account: ' + d.user.role);
       return;
     }
     enter();
-  } catch(e){ alert(e.message); }
+  } catch(e){ setStatus(e.message); }
 }
 
 function enter(){
@@ -134,11 +184,13 @@ function signOut(){
   localStorage.removeItem('obg_staff_token');
   $('dash').classList.add('hidden');
   $('login').classList.remove('hidden');
+  $('status').style.display = 'none';
 }
 
 async function render(){
   const role = state.user.role;
   const box = $('body');
+  box.innerHTML = '<div class="card"><p class="muted">Loading…</p></div>';
 
   if (role === 'admin' || role === 'superadmin'){
     const o = await api('/portal/overview').catch(()=>({}));
@@ -168,8 +220,7 @@ async function render(){
   }
 
   else if (role === 'vendor'){
-    const vendor = 'Obuasi Kitchen';
-    const orders = await api('/portal/orders?vendor=' + encodeURIComponent(vendor)).catch(()=>[]);
+    const orders = await api('/portal/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(()=>[]);
     box.innerHTML = `
       <div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or delivery PINs.</div>
       <div class="card">
@@ -186,8 +237,7 @@ async function render(){
   }
 
   else if (role === 'hotel'){
-    const hotel = 'Obuasi Royal Hotel';
-    const bookings = await api('/portal/bookings?hotel=' + encodeURIComponent(hotel)).catch(()=>[]);
+    const bookings = await api('/portal/bookings?hotel=' + encodeURIComponent('Obuasi Royal Hotel')).catch(()=>[]);
     box.innerHTML = `
       <div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>
       <div class="card" style="text-align:center">
@@ -202,7 +252,7 @@ async function render(){
   }
 }
 
-// Restore session
+/* Restore session */
 (function(){
   const t = localStorage.getItem('obg_staff_token');
   if (!t) return;
@@ -210,8 +260,7 @@ async function render(){
   api('/me').then(d => {
     state.user = d.user;
     if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) !== -1) enter();
-    else signOut();
-  }).catch(()=>{ signOut(); });
+  }).catch(()=>{});
 })();
 </script>
 </body>
