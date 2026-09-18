@@ -773,7 +773,203 @@ app.post('/api/documents', auth, upload.single('document'), async function(req, 
   res.status(201).json({ ok: true, url: url });
 });
 
-app.get('/payment-return', function(req, res) {
+app.get('/payment-return', function(req, res): /* ============ NEW: Vendor approve -> Rider pickup -> Earnings ============ */
+
+async function ensureNewColumns(){
+  if (!pool) return;
+  await pool.query(
+    'alter table orders add column if not exists pickup_token text;' +
+    'alter table orders add column if not exists pickup_scanned_at timestamptz;' +
+    'alter table orders add column if not exists rider_commission numeric default 15;' +
+    'alter table orders add column if not exists rider_accepted_at timestamptz;' +
+    'alter table orders add column if not exists vendor_accepted_at timestamptz;'
+  ).catch(function(){});
+}
+ensureNewColumns();
+
+/* Vendor approves order -> generates pickup code */
+app.patch('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','superadmin'), async function(req, res){
+  let order;
+  if (pool){
+    order = (await q('select * from orders where id=$1', [req.params.id]))[0];
+  } else {
+    order = mem.orders.get(req.params.id);
+  }
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const pickupToken = 'PCK-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  const status = 'Restaurant accepted';
+  if (pool){
+    const r = await q(
+      'update orders set status=$1, pickup_token=$2, vendor_accepted_at=now(), updated_at=now() where id=$3 returning *',
+      [status, pickupToken, req.params.id]
+    );
+    return res.json(r[0]);
+  }
+  order.status = status;
+  order.pickup_token = pickupToken;
+  order.vendor_accepted_at = new Date().toISOString();
+  res.json(order);
+});
+
+/* Vendor fetches pickup QR for an approved order */
+app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','rider'), async function(req, res){
+  let order;
+  if (pool){
+    order = (await q('select * from orders where id=$1', [req.params.id]))[0];
+  } else {
+    order = mem.orders.get(req.params.id);
+  }
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (!order.pickup_token) return res.status(400).json({ error: 'Order not yet approved by vendor' });
+
+  const payload = { t: 'pickup', id: order.id, code: order.pickup_token };
+  const token = jwt.sign(payload, SIGNING_SECRET);
+  const png = await QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' });
+  res.json({ png: png, code: order.pickup_token, orderId: order.id, total: order.total, status: order.status });
+});
+
+/* Rider scans or enters pickup code */
+app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), async function(req, res){
+  const raw = String(req.body.qr || '').trim();
+  const code = String(req.body.code || '').trim().toUpperCase();
+  let decoded = null;
+  if (raw){
+    try { decoded = jwt.verify(raw, SIGNING_SECRET); }
+    catch(e){ return res.status(400).json({ error: 'Invalid QR' }); }
+    if (decoded.t !== 'pickup') return res.status(400).json({ error: 'Not a pickup code' });
+  }
+  const orderId = decoded ? decoded.id : null;
+  const token = decoded ? decoded.code : code;
+
+  let order;
+  if (pool){
+    if (orderId){
+      order = (await q('select * from orders where id=$1 and pickup_token=$2', [orderId, token]))[0];
+    } else {
+      order = (await q('select * from orders where pickup_token=$1', [token]))[0];
+    }
+  } else {
+    const arr = [];
+    mem.orders.forEach(function(v){ arr.push(v); });
+    order = orderId
+      ? arr.filter(function(o){ return o.id === orderId && o.pickup_token === token; })[0]
+      : arr.filter(function(o){ return o.pickup_token === token; })[0];
+  }
+  if (!order) return res.status(404).json({ error: 'Order not found or wrong code' });
+
+  if (pool){
+    const r = await q(
+      'update orders set status=$1, rider_phone=$2, pickup_scanned_at=now(), updated_at=now() where id=$3 returning *',
+      ['Food picked up', req.user.phone, order.id]
+    );
+    return res.json({ ok: true, order: r[0] });
+  }
+  order.status = 'Food picked up';
+  order.rider_phone = req.user.phone;
+  order.pickup_scanned_at = new Date().toISOString();
+  res.json({ ok: true, order: order });
+});
+
+/* Rider sign-in: gets a session verification code */
+app.post('/api/rider/online', auth, roles('rider','admin','superadmin'), function(req, res){
+  const code = String(1000 + Math.floor(Math.random() * 9000));
+  global.riderCodes = global.riderCodes || new Map();
+  global.riderCodes.set(req.user.phone, { code: code, expires: Date.now() + 300000 });
+  console.log('[RIDER ONLINE CODE]', req.user.phone, code);
+  res.json({ ok: true, code: code, dev: true });
+});
+
+app.post('/api/rider/verify-online', auth, roles('rider','admin','superadmin'), function(req, res){
+  const code = String(req.body.code || '').trim();
+  const rec = global.riderCodes ? global.riderCodes.get(req.user.phone) : null;
+  if (!rec || Date.now() > rec.expires) return res.status(400).json({ error: 'Code expired' });
+  if (rec.code !== code) return res.status(400).json({ error: 'Wrong code' });
+  global.riderCodes.delete(req.user.phone);
+  res.json({ ok: true });
+});
+
+/* Rider: assigned orders */
+app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), async function(req, res){
+  const phone = req.user.phone;
+  if (pool){
+    const rows = await q(
+      'select * from orders ' +
+      'where (rider_phone=$1 or status in (\'Food ready\',\'Restaurant accepted\',\'Rider accepted\')) ' +
+      'and status <> \'Completed\' order by created_at desc',
+      [phone]
+    );
+    return res.json(rows);
+  }
+  const arr = [];
+  mem.orders.forEach(function(o){
+    if (o.status === 'Completed') return;
+    if (o.rider_phone === phone || o.status === 'Food ready' || o.status === 'Restaurant accepted' || o.status === 'Rider accepted') arr.push(o);
+  });
+  res.json(arr);
+});
+
+/* Rider: accepts an order with commission */
+app.post('/api/rider/orders/:id/accept', auth, roles('rider','admin','superadmin'), async function(req, res){
+  const commission = Number(req.body.commission || 15);
+  if (pool){
+    const r = await q(
+      'update orders set rider_phone=$1, rider_accepted_at=now(), rider_commission=$2, ' +
+      'status=case when status in (\'Food ready\',\'Restaurant accepted\') then \'Rider accepted\' else status end, ' +
+      'updated_at=now() where id=$3 returning *',
+      [req.user.phone, commission, req.params.id]
+    );
+    if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+    return res.json(r[0]);
+  }
+  const o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.rider_phone = req.user.phone;
+  o.rider_accepted_at = new Date().toISOString();
+  o.rider_commission = commission;
+  if (o.status === 'Food ready' || o.status === 'Restaurant accepted') o.status = 'Rider accepted';
+  res.json(o);
+});
+
+/* Rider: completes order, credits earnings */
+app.post('/api/rider/orders/:id/complete', auth, roles('rider','admin','superadmin'), async function(req, res){
+  let order;
+  if (pool){
+    order = (await q('select * from orders where id=$1', [req.params.id]))[0];
+  } else order = mem.orders.get(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (order.rider_phone !== req.user.phone && req.user.role !== 'admin' && req.user.role !== 'superadmin'){
+    return res.status(403).json({ error: 'Not your order' });
+  }
+  const commission = Number(order.rider_commission || 15);
+  if (pool){
+    await q('update orders set status=\'Completed\', updated_at=now() where id=$1', [order.id]);
+    await q('insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)',
+      [req.user.phone, order.id, commission]);
+    return res.json({ ok: true, commission: commission });
+  }
+  order.status = 'Completed';
+  mem.earnings.push({ rider_phone: req.user.phone, order_id: order.id, amount: commission, day: new Date().toISOString().slice(0,10) });
+  res.json({ ok: true, commission: commission });
+});
+
+/* Rider: dashboard summary */
+app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), async function(req, res){
+  const phone = req.user.phone;
+  if (pool){
+    const assigned = (await q('select count(*) n from orders where rider_phone=$1 and status <> \'Completed\'', [phone]))[0];
+    const completed = (await q('select count(*) n from orders where rider_phone=$1 and status=\'Completed\'', [phone]))[0];
+    const earnings = (await q('select coalesce(sum(amount),0) n from rider_earnings where rider_phone=$1', [phone]))[0];
+    return res.json({ assigned: Number(assigned.n), completed: Number(completed.n), earnings: Number(earnings.n) });
+  }
+  let assigned = 0, completed = 0, earnings = 0;
+  mem.orders.forEach(function(o){
+    if (o.rider_phone !== phone) return;
+    if (o.status === 'Completed') completed++; else assigned++;
+  });
+  mem.earnings.forEach(function(e){ if (e.rider_phone === phone) earnings += e.amount; });
+  res.json({ assigned: assigned, completed: completed, earnings: earnings });
+}); {
   res.sendFile(path.join(__dirname, 'public', 'payment-return.html'));
 });
 
