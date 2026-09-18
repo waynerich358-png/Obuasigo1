@@ -13,6 +13,7 @@ body{margin:0;font-family:system-ui,sans-serif;background:#f5f7f6;color:#10231a}
 .card{background:#fff;border:1px solid #e7ece9;border-radius:16px;padding:20px;margin-bottom:14px}
 .btn{padding:12px 16px;border-radius:10px;font-weight:800;border:0;cursor:pointer;background:#087443;color:#fff;font-size:14px}
 .btn.sec{background:#edf3ef;color:#087443}
+.btn.danger{background:#fdecec;color:#b02a2a}
 .btn.wide{width:100%}
 .input{width:100%;padding:13px;border:1px solid #dce4df;border-radius:10px;margin:6px 0 14px;font:inherit}
 label{font-size:13px;font-weight:700;color:#374b41;display:block;margin-top:6px}
@@ -27,15 +28,13 @@ th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eef2f0}
 th{color:#6d7b74;font-size:12px;text-transform:uppercase}
 .warn{background:#fff4e0;color:#7a4b00;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
 .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px}
-.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer;transition:.15s}
-.role:active{border-color:#087443;transform:scale(.98)}
+.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer}
 .role .em{font-size:42px}
 .role b{display:block;margin-top:8px}
 .role small{display:block;color:#6d7b74;font-size:12px;margin-top:4px}
 .hidden{display:none}
 .status{background:#eef4f1;color:#374b41;padding:10px 12px;border-radius:10px;font-size:13px;margin-top:10px;text-align:center}
-.qr-modal{position:fixed;inset: class0;="backgroundhidden:#000">
-c;   z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
+.qr-modal{position:fixed;inset:0;background:#000c;z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
 .qr-box{background:#fff;border-radius:20px;padding:22px;text-align:center;max-width:420px;width:100%}
 .qr-box img{width:100%;max-width:280px;margin:12px auto;display:block}
 .qr-code{font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:900;background:#f2f6f4;padding:10px;border-radius:12px;margin:8px 0}
@@ -50,17 +49,11 @@ c;   z-index:999;display:flex;align-items:center;justify-content:center;padding:
     <div class="card" style="text-align:center">
       <span class="badge">SECURE STAFF ACCESS</span>
       <h1 style="margin:10px 0">Staff sign in</h1>
-      <p class="muted">Tap your role below to sign in instantly.</p>
+      <p class="muted">Tap your role to sign in instantly.</p>
       <div class="roles">
-        <div class="role" onclick="quickLogin('+233241111111')">
-          <div class="em">🛡️</div><b>Admin</b><small>Full overview</small>
-        </div>
-        <div class="role" onclick="quickLogin('+233242222222')">
-          <div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small>
-        </div>
-        <div class="role" onclick="quickLogin('+233243333333')">
-          <div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small>
-        </div>
+        <div class="role" onclick="quickLogin('+233241111111')"><div class="em">🛡️</div><b>Admin</b><small>Full overview</small></div>
+        <div class="role" onclick="quickLogin('+233242222222')"><div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small></div>
+        <div class="role" onclick="quickLogin('+233243333333')"><div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small></div>
       </div>
       <div id="status" class="status" style="display:none"></div>
       <hr style="border:0;border-top:1px solid #eef2f0;margin:20px 0">
@@ -73,14 +66,15 @@ c;   z-index:999;display:flex;align-items:center;justify-content:center;padding:
           <div id="otpStep" class="hidden" style="margin-top:14px">
             <label>6-digit code</label>
             <input class="input" id="code" placeholder="123456" maxlength="6">
-            <button class="btn wide" onclick="verifyOtp()">Verify &amp; sign in</button>
+            <button class="btn wide" onclick="verifyOtp()">Verify</button>
           </div>
         </div>
       </details>
     </div>
   </div>
 
-  <div id="dash" <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+  <div id="dash" class="hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
       <div>
         <span class="badge" id="roleBadge">—</span>
         <h2 id="title" style="margin:6px 0 0">—</h2>
@@ -97,6 +91,7 @@ c;   z-index:999;display:flex;align-items:center;justify-content:center;padding:
 <script>
 var $ = function(id){ return document.getElementById(id); };
 var state = { token:'', user:null };
+var lastOrderCount = 0;
 
 function money(n){ return 'GH\u20B5' + Number(n || 0).toFixed(2); }
 function esc(s){
@@ -104,12 +99,8 @@ function esc(s){
     return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c];
   });
 }
-function setStatus(msg){
-  var s = $('status'); s.style.display = 'block'; s.textContent = msg;
-}
-function authHeaders(){
-  return state.token ? { Authorization: 'Bearer ' + state.token } : {};
-}
+function setStatus(msg){ var s = $('status'); s.style.display = 'block'; s.textContent = msg; }
+function authHeaders(){ return state.token ? { Authorization: 'Bearer ' + state.token } : {}; }
 async function api(path, opts){
   opts = opts || {};
   opts.headers = Object.assign({ 'Content-Type':'application/json' }, authHeaders(), opts.headers || {});
@@ -118,31 +109,29 @@ async function api(path, opts){
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
+function playBeep(){
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e){}
+}
 
 async function quickLogin(phone){
   setStatus('Sending code to ' + phone + '...');
   try {
     var a = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
-    if (!a.devOtp){
-      setStatus('OTP sent. Enter it below.');
-      $('phone').value = phone;
-      $('otpStep').classList.remove('hidden');
-      return;
-    }
+    if (!a.devOtp){ setStatus('OTP sent'); $('phone').value = phone; $('otpStep').classList.remove('hidden'); return; }
     setStatus('Verifying...');
     var b = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: a.devOtp }) });
-    state.token = b.token;
-    state.user = b.user;
+    state.token = b.token; state.user = b.user;
     localStorage.setItem('obg_staff_token', b.token);
-    
-    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1) {
-      setStatus('This number is not a staff account. Role: ' + b.user.role);
-      return;
-    }
+    if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){ setStatus('Not a staff account: ' + b.user.role); return; }
     enter();
-  } catch(e){
-    setStatus('Error: ' + e.message);
-  }
+  } catch(e){ setStatus('Error: ' + e.message); }
 }
 
 async function sendOtp(){
@@ -156,17 +145,13 @@ async function sendOtp(){
   } catch(e){ setStatus(e.message); }
   $('sendBtn').disabled = false;
 }
-
 async function verifyOtp(){
-  var phone = $('phone').value.trim();
-  var code = $('code').value.trim();
+  var phone = $('phone').value.trim(); var code = $('code').value.trim();
   try {
     var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
     state.token = d.token; state.user = d.user;
     localStorage.setItem('obg_staff_token', d.token);
-    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1) {
-      setStatus('Not a staff account: ' + d.user.role); return;
-    }
+    if (['admin','superadmin','vendor','hotel'].indexOf(d.user.role) === -1){ setStatus('Not a staff account'); return; }
     enter();
   } catch(e){ setStatus(e.message); }
 }
@@ -178,13 +163,22 @@ function enter(){
   $('roleBadge').textContent = labels[state.user.role] || state.user.role;
   $('title').textContent = (labels[state.user.role] || state.user.role) + ' dashboard';
   render();
+  startPolling();
+}
+
+function startPolling(){
+  if (window._poll) clearInterval(window._poll);
+  window._poll = setInterval(function(){
+    if ($('dash').classList.contains('hidden')) return;
+    if (state.user && state.user.role === 'vendor') render();
+  }, 5000);
 }
 
 function signOut(){
   state.token = ''; state.user = null;
+  if (window._poll) clearInterval(window._poll);
   localStorage.removeItem('obg_staff_token');
-  $('dash').classList.add('hidden');
-  $('login').classList.remove('hidden');
+  $('dash').classList.add('hidden'); $('login').classList.remove('hidden');
   $('status').style.display = 'none';
 }
 
@@ -197,8 +191,7 @@ async function render(){
     var o = await api('/portal/overview').catch(function(){ return {}; });
     var orders = await api('/portal/orders').catch(function(){ return []; });
     var bookings = await api('/portal/bookings').catch(function(){ return []; });
-    
-    box.innerHTML = 
+    box.innerHTML =
       '<div class="mg">'
       + '<div class="m">Customers<b>' + (o.customers || 0) + '</b></div>'
       + '<div class="m">Riders<b>' + (o.riders || 0) + '</b></div>'
@@ -208,57 +201,58 @@ async function render(){
       + '<div class="m">Checked-in<b>' + (o.checkedIn || 0) + '</b></div>'
       + '</div>'
       + '<div class="card"><h3 style="margin-top:0">Recent orders</h3>'
-      + (orders.length ? 
+      + (orders.length ?
           '<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>'
-          + orders.slice(0,20).map(function(x){
+          + orders.slice(0, 20).map(function(x){
               return '<tr><td>#' + esc(x.id) + '</td><td>' + esc(x.vendor) + '</td><td>' + esc(x.customer_phone) + '</td><td>' + money(x.total) + '</td><td><span class="badge">' + esc(x.status) + '</span></td></tr>';
             }).join('')
-          + '</tbody></table>' 
+          + '</tbody></table>'
           : '<p class="muted">No orders yet.</p>')
       + '</div>'
       + '<div class="card"><h3 style="margin-top:0">Hotel bookings</h3>'
-      + (bookings.length ? 
+      + (bookings.length ?
           '<table><thead><tr><th>ID</th><th>Hotel</th><th>Code</th><th>Status</th></tr></thead><tbody>'
-          + bookings.slice(0,20).map(function(b){
+          + bookings.slice(0, 20).map(function(b){
               return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.hotel) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
             }).join('')
-          + '</tbody></table>' 
+          + '</tbody></table>'
           : '<p class="muted">No bookings yet.</p>')
       + '</div>';
   }
 
   else if (role === 'vendor'){
-    var vendorOrders = await api('/portal/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(function(){ return []; });
-    
-    box.innerHTML = 
+    var vendorOrders = await api('/vendor/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(function(){ return []; });
+    if (vendorOrders.length > lastOrderCount && lastOrderCount > 0) playBeep();
+    lastOrderCount = vendorOrders.length;
+
+    box.innerHTML =
       '<div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or PINs.</div>'
-      + '<div class="card"><h3 style="margin-top:0">Incoming orders</h3>'
+      + '<div class="card"><h3 style="margin-top:0">Incoming orders (' + vendorOrders.length + ')</h3>'
       + (vendorOrders.length ? vendorOrders.map(function(x){
           var s = x.status;
           var buttons = '';
-          
           if (s === 'Order created' || s === 'Payment confirmed'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ Accept order</button>';
+            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ Accept order</button>'
+                    + '<button class="btn danger" style="width:100%;margin-top:8px" onclick="rejectOrder(\'' + esc(x.id) + '\')">✕ Reject order</button>';
           } else if (s === 'Restaurant accepted'){
             buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Mark food ready</button>'
-                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR for rider</button>';
+                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR</button>';
           } else if (s === 'Food ready'){
-            buttons = '<div class="badge gold" style="margin-top:10px;display:inline-block">Waiting for rider to arrive...</div>'
+            buttons = '<div class="badge gold" style="margin-top:10px;display:inline-block">Waiting for rider…</div>'
                     + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR again</button>';
           } else if (s === 'Rider accepted' || s === 'Rider arrived'){
             buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">📦 Hand food to rider</button>';
           } else {
             buttons = '<div class="badge" style="margin-top:10px;display:inline-block">' + esc(s) + '</div>';
           }
-          
+          var note = x.note ? '<div style="background:#fff4e0;border-radius:8px;padding:8px;margin-top:8px;font-size:13px"><b>📝 Customer note:</b> ' + esc(x.note) + '</div>' : '';
           return '<div style="border-bottom:1px solid #eef2f0;padding:14px 0">'
             + '<div style="display:flex;justify-content:space-between"><b>#' + esc(x.id) + '</b><span class="badge gold">' + esc(s) + '</span></div>'
             + (x.rider_phone ? '<div class="muted" style="margin-top:4px">Rider: ' + esc(x.rider_phone) + '</div>' : '<div class="muted" style="margin-top:4px">No rider yet</div>')
             + '<table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>'
-            + x.items.map(function(i){
-                return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty * i.price) + '</td></tr>';
-              }).join('')
+            + x.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty * i.price) + '</td></tr>'; }).join('')
             + '</tbody></table>'
+            + note
             + '<div style="text-align:right;margin-top:6px"><b>Total: ' + money(x.total) + '</b></div>'
             + buttons
             + '</div>';
@@ -268,19 +262,18 @@ async function render(){
 
   else if (role === 'hotel'){
     var hotelBookings = await api('/portal/bookings?hotel=' + encodeURIComponent('Obuasi Royal Hotel')).catch(function(){ return []; });
-    
-    box.innerHTML = 
+    box.innerHTML =
       '<div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>'
       + '<div class="card" style="text-align:center">'
       + '<a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>'
       + '</div>'
       + '<div class="card"><h3 style="margin-top:0">Bookings</h3>'
-      + (hotelBookings.length ? 
+      + (hotelBookings.length ?
           '<table><thead><tr><th>ID</th><th>Room</th><th>Stay</th><th>Code</th><th>Status</th></tr></thead><tbody>'
           + hotelBookings.map(function(b){
               return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.room) + '</td><td>' + esc(b.check_in || '') + ' → ' + esc(b.check_out || '') + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
             }).join('')
-          + '</tbody></table>' 
+          + '</tbody></table>'
           : '<p class="muted">No bookings yet.</p>')
       + '</div>';
   }
@@ -293,12 +286,22 @@ async function vendorAction(id, action){
   } catch(e){ alert(e.message); }
 }
 
+async function rejectOrder(id){
+  var reason = prompt('Reason for rejecting (optional):', 'Item unavailable');
+  if (reason === null) return;
+  try {
+    await api('/orders/' + id + '/vendor-reject', { method:'POST', body: JSON.stringify({ reason: reason }) });
+    alert('Order rejected');
+    render();
+  } catch(e){ alert(e.message); }
+}
+
 async function showPickupQR(id){
   try {
     var d = await api('/orders/' + id + '/pickup-qr');
     var overlay = document.createElement('div');
     overlay.className = 'qr-modal';
-    overlay.innerHTML = 
+    overlay.innerHTML =
       '<div class="qr-box">'
       + '<h2 style="margin:0 0 6px">Rider pickup</h2>'
       + '<p class="muted" style="font-size:13px">Show this QR to the rider, or read the code aloud.</p>'

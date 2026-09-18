@@ -30,7 +30,7 @@ body{margin:0;font-family:system-ui,sans-serif;background:#0e1714;color:#fff;min
 </style>
 </head>
 <body>
-<div class="top">Obuasi<span>Go</span> · Scan</div>
+<div class="top">Obuasi<span>Go</span> · Scan<a href="/portal.html">← Portal</a></div>
 <div class="wrap">
   <div class="card">
     <span class="badge" id="roleHint">—</span>
@@ -39,7 +39,7 @@ body{margin:0;font-family:system-ui,sans-serif;background:#0e1714;color:#fff;min
     <div id="reader"></div>
     <div class="status" id="status">Starting camera…</div>
     <div class="row" style="margin-top:10px">
-      <button class="btn sec" onclick="startNative()">🔄 Restart</button>
+      <button class="btn sec" onclick="startScanner()">🔄 Restart</button>
       <button class="btn sec" onclick="stopScanner()">⏸ Stop</button>
     </div>
   </div>
@@ -55,87 +55,42 @@ body{margin:0;font-family:system-ui,sans-serif;background:#0e1714;color:#fff;min
 </div>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-const $ = id => document.getElementById(id);
-let scanner = null;
-let userRole = 'hotel';
-
-/* Detect role from stored token */
-const riderTok = localStorage.getItem('obg_rider_token');
-const staffTok = localStorage.getItem('obg_staff_token');
-let token = staffTok || riderTok || '';
+var $ = function(id){ return document.getElementById(id); };
+var scanner = null;
+var userRole = 'hotel';
+var token = localStorage.getItem('obg_staff_token') || localStorage.getItem('obg_rider_token') || '';
 
 function status(m, c){ $('status').textContent = m; if (c) $('status').style.color = c; }
 function showResult(ok, t, s){
-  const r = $('result');
+  var r = $('result');
   r.className = 'result ' + (ok ? 'ok' : 'err');
   r.innerHTML = '<b>' + t + '</b><div>' + (s || '') + '</div>';
   setTimeout(function(){ r.className = 'result'; }, 6000);
 }
-
 async function api(path, opts){
-  const r = await fetch('/api' + path, Object.assign({}, opts, {
-    headers: Object.assign({ 'Content-Type':'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}, (opts && opts.headers) || {})
-  }));
-  const d = await r.json().catch(function(){ return {}; });
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Content-Type':'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}, opts.headers || {});
+  var r = await fetch('/api' + path, opts);
+  var d = await r.json().catch(function(){ return {}; });
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
 }
 
-/* Figure out who is logged in */
 (async function(){
   if (!token){ status('Sign in first.', '#f3a11b'); setTimeout(function(){ location.href='/portal.html'; }, 2000); return; }
   try {
-    const me = await api('/me');
+    var me = await api('/me');
     userRole = me.user.role;
     $('roleHint').textContent = userRole.toUpperCase() + ' · ' + me.user.phone;
-    startNative();
+    startScanner();
   } catch(e){
     status('Session expired. Sign in again.', '#f3a11b');
     setTimeout(function(){ location.href='/portal.html'; }, 2000);
   }
 })();
 
-async function startNative(){
-  if ('BarcodeDetector' in window) return startBD();
-  return startHtml5();
-}
-
-async function startBD(){
-  try {
-    status('Requesting camera…');
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    const reader = $('reader');
-    reader.innerHTML = '';
-    const v = document.createElement('video');
-    v.autoplay = true; v.playsInline = true; v.muted = true;
-    v.srcObject = stream;
-    v.style.width = '100%'; v.style.display = 'block'; v.style.borderRadius = '14px';
-    reader.appendChild(v);
-    await v.play();
-    const det = new BarcodeDetector({ formats: ['qr_code'] });
-    status('Scanning…', '#33d17a');
-    const loop = async function(){
-      if (!v.isConnected){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
-      try {
-        const codes = await det.detect(v);
-        if (codes.length){
-          const text = codes[0].rawValue;
-          stream.getTracks().forEach(function(t){ t.stop(); });
-          handle(text);
-          return;
-        }
-      } catch(e){}
-      requestAnimationFrame(loop);
-    };
-    loop();
-  } catch(e){
-    status('Native failed — trying fallback…', '#f3a11b');
-    setTimeout(startHtml5, 400);
-  }
-}
-
-function startHtml5(){
-  if (typeof Html5Qrcode === 'undefined'){ status('Scanner loading…'); return; }
+function startScanner(){
+  if (typeof Html5Qrcode === 'undefined'){ status('Scanner library loading…'); return; }
   $('reader').innerHTML = '';
   if (scanner){ try { scanner.clear(); } catch(e){} scanner = null; }
   scanner = new Html5Qrcode('reader');
@@ -150,54 +105,50 @@ function startHtml5(){
 
 function stopScanner(){
   if (scanner){ try { scanner.stop().then(function(){ scanner = null; status('Stopped'); }); } catch(e){ scanner = null; } }
-  const v = document.querySelector('#reader video');
+  var v = document.querySelector('#reader video');
   if (v && v.srcObject) v.srcObject.getTracks().forEach(function(t){ t.stop(); });
 }
 
-let lastScan = { t:'', at:0 };
+var lastScan = { t:'', at:0 };
 async function handle(text){
-  const now = Date.now();
+  var now = Date.now();
   if (text === lastScan.t && now - lastScan.at < 4000) return;
   lastScan = { t: text, at: now };
   stopScanner();
-
-  /* Riders call /rider/pickup. Hotel/admin call /portal/checkin. */
-  const isRider = userRole === 'rider';
-  const path = isRider ? '/rider/pickup' : '/portal/checkin';
-
+  var isRider = userRole === 'rider';
+  var path = isRider ? '/rider/pickup' : '/portal/checkin';
   try {
-    const r = await api(path, { method:'POST', body: JSON.stringify({ qr: text }) });
+    var r = await api(path, { method:'POST', body: JSON.stringify({ qr: text }) });
     if (isRider){
-      const o = r.order || {};
+      var o = r.order || {};
       showResult(true, '✓ Pickup confirmed', '#' + (o.id || '') + ' · ' + (o.vendor || ''));
       status('✓ Pickup confirmed', '#33d17a');
     } else {
-      const b = r.booking || {};
+      var b = r.booking || {};
       showResult(true, '✓ Checked in', '#' + (b.id || '') + ' ' + (b.hotel || ''));
       status('✓ Guest checked in', '#33d17a');
     }
-    setTimeout(startNative, 2500);
+    setTimeout(startScanner, 2500);
   } catch(e){
     showResult(false, '✗ ' + e.message, '');
     status(e.message, '#f0a0a0');
-    setTimeout(startNative, 2500);
+    setTimeout(startScanner, 2500);
   }
 }
 
 async function manual(){
-  const code = ($('manualCode').value || '').trim().toUpperCase();
+  var code = ($('manualCode').value || '').trim().toUpperCase();
   if (!code) return status('Enter a code', '#f3a11b');
-  const isRider = userRole === 'rider';
+  var isRider = userRole === 'rider';
+  var path = isRider ? '/rider/pickup' : '/portal/checkin';
   try {
-    const body = isRider ? { code: code } : { code: code };
-    const path = isRider ? '/rider/pickup' : '/portal/checkin';
-    const r = await api(path, { method:'POST', body: JSON.stringify(body) });
+    var r = await api(path, { method:'POST', body: JSON.stringify({ code: code }) });
     if (isRider){
-      const o = r.order || {};
+      var o = r.order || {};
       showResult(true, '✓ Pickup confirmed', '#' + (o.id || ''));
       status('✓ Pickup confirmed', '#33d17a');
     } else {
-      const b = r.booking || {};
+      var b = r.booking || {};
       showResult(true, '✓ Checked in', '#' + (b.id || ''));
       status('✓ Guest checked in', '#33d17a');
     }

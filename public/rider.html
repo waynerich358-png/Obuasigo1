@@ -46,7 +46,6 @@ label{font-size:13px;font-weight:700;color:#c6d4cd;display:block;margin-top:6px}
 </head>
 <body>
 <div class="shell">
-
   <div class="top">
     <div class="dot" id="dot"></div>
     <div>
@@ -69,23 +68,19 @@ label{font-size:13px;font-weight:700;color:#c6d4cd;display:block;margin-top:6px}
       <div id="otpStep" class="hidden" style="margin-top:12px">
         <label>6-digit code</label>
         <input class="input" id="code" maxlength="6" inputmode="numeric" placeholder="123456">
-        <button class="btn primary" style="width:100%" onclick="verifyOtp()">Verify &amp; enter</button>
+        <button class="btn primary" style="width:100%" onclick="verifyOtp()">Verify</button>
       </div>
-    </div>
-    <div class="card">
-      <b>Not a rider yet?</b>
-      <p class="muted">Ask the ObuasiGo admin to set your account to <code>role='rider'</code>.</p>
     </div>
   </div>
 
   <div id="onlineVerify" class="hidden">
     <div class="card">
       <h2>Verify to go online</h2>
-      <p class="muted">A 4-digit code was sent to your phone. Enter it below.</p>
+      <p class="muted">A 4-digit code was generated. Enter it to go online.</p>
       <div class="m" style="font-size:34px;letter-spacing:12px;font-weight:900;color:#33d17a;text-align:center" id="codeDisplay">—</div>
       <label>Enter the code</label>
       <input class="input" id="onlineCode" maxlength="4" inputmode="numeric" placeholder="1234">
-      <button class="btn primary" style="width:100%" onclick="verifyOnline()">Verify &amp; go online</button>
+      <button class="btn primary" style="width:100%" onclick="verifyOnline()">Go online</button>
       <button class="btn secondary" style="width:100%;margin-top:8px" onclick="cancelVerify()">Cancel</button>
     </div>
   </div>
@@ -123,6 +118,7 @@ label{font-size:13px;font-weight:700;color:#c6d4cd;display:block;margin-top:6px}
 <script>
 var $ = function(id){ return document.getElementById(id); };
 var state = { token:'', user:null, online:false, assigned:[] };
+var lastAssignedCount = 0;
 
 function money(n){ return 'GH\u20B5' + Number(n || 0).toFixed(2); }
 function esc(s){
@@ -131,11 +127,8 @@ function esc(s){
   });
 }
 function toast(m, ms){
-  var t = $('toast');
-  t.textContent = m;
-  t.style.display = 'block';
-  clearTimeout(t._t);
-  t._t = setTimeout(function(){ t.style.display = 'none'; }, ms || 2400);
+  var t = $('toast'); t.textContent = m; t.style.display = 'block';
+  clearTimeout(t._t); t._t = setTimeout(function(){ t.style.display = 'none'; }, ms || 2400);
 }
 function authHeaders(){ return state.token ? { Authorization: 'Bearer ' + state.token } : {}; }
 async function api(path, opts){
@@ -145,6 +138,16 @@ async function api(path, opts){
   var d = await r.json().catch(function(){ return {}; });
   if (!r.ok) throw new Error(d.error || 'Request failed');
   return d;
+}
+function playBeep(){
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+  } catch(e){}
 }
 
 async function sendOtp(){
@@ -160,15 +163,12 @@ async function sendOtp(){
 }
 
 async function verifyOtp(){
-  var phone = $('phone').value.trim();
-  var code = $('code').value.trim();
+  var phone = $('phone').value.trim(); var code = $('code').value.trim();
   try {
     var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
     state.token = d.token; state.user = d.user;
     localStorage.setItem('obg_rider_token', d.token);
-    if (['rider','admin','superadmin'].indexOf(d.user.role) === -1){
-      toast('Not a rider account (' + d.user.role + ')'); return;
-    }
+    if (['rider','admin','superadmin'].indexOf(d.user.role) === -1){ toast('Not a rider account (' + d.user.role + ')'); return; }
     enterApp();
   } catch(e){ toast(e.message); }
 }
@@ -177,16 +177,24 @@ function enterApp(){
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('riderName').textContent = state.user.full_name || state.user.phone;
-  loadSummary();
-  loadAssigned();
-  loadEarnings();
+  loadSummary(); loadAssigned(); loadEarnings();
+  startPolling();
+}
+
+function startPolling(){
+  if (window._riderPoll) clearInterval(window._riderPoll);
+  window._riderPoll = setInterval(function(){
+    if (!state.token || !state.user) return;
+    if ($('app').classList.contains('hidden')) return;
+    loadAssigned(); loadSummary();
+  }, 5000);
 }
 
 function signOut(){
   state.token = ''; state.user = null;
+  if (window._riderPoll) clearInterval(window._riderPoll);
   localStorage.removeItem('obg_rider_token');
-  $('app').classList.add('hidden');
-  $('login').classList.remove('hidden');
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
 }
 
 async function toggleOnline(){
@@ -200,8 +208,7 @@ async function toggleOnline(){
     return;
   }
   state.online = false;
-  $('sw').classList.remove('on');
-  $('dot').classList.remove('on');
+  $('sw').classList.remove('on'); $('dot').classList.remove('on');
   toast('You are offline');
 }
 
@@ -210,23 +217,19 @@ async function verifyOnline(){
   try {
     await api('/rider/verify-online', { method:'POST', body: JSON.stringify({ code: code }) });
     state.online = true;
-    $('sw').classList.add('on');
-    $('dot').classList.add('on');
-    $('onlineVerify').classList.add('hidden');
-    $('app').classList.remove('hidden');
+    $('sw').classList.add('on'); $('dot').classList.add('on');
+    $('onlineVerify').classList.add('hidden'); $('app').classList.remove('hidden');
     toast('You are online ✓');
     loadAssigned();
   } catch(e){ toast(e.message); }
 }
-
-function cancelVerify(){
-  $('onlineVerify').classList.add('hidden');
-  $('app').classList.remove('hidden');
-}
+function cancelVerify(){ $('onlineVerify').classList.add('hidden'); $('app').classList.remove('hidden'); }
 
 async function loadAssigned(){
   try {
     state.assigned = await api('/rider/assigned');
+    if (state.assigned.length > lastAssignedCount && lastAssignedCount > 0) playBeep();
+    lastAssignedCount = state.assigned.length;
     renderAssigned();
   } catch(e){ $('assignedList').innerHTML = '<p class="muted">' + esc(e.message) + '</p>'; }
 }
@@ -234,36 +237,31 @@ async function loadAssigned(){
 function renderAssigned(){
   var box = $('assignedList');
   if (!state.assigned.length){ box.innerHTML = '<p class="muted">No active orders right now.</p>'; return; }
-  
   box.innerHTML = state.assigned.map(function(o){
     var s = o.status;
     var items = (o.items || []).map(function(i){ return i.qty + '× ' + i.name; }).join(', ');
     var mine = o.rider_phone === state.user.phone;
     var btn = '';
-
     if (!o.rider_phone && ['Food ready','Restaurant accepted'].indexOf(s) !== -1){
-      btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="acceptOrder(\'' + esc(o.id) + '\')">Accept · earn ' + money(15) + '</button>';
-    }
-    else if (mine && s === 'Rider accepted'){
+      btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="acceptOrder(\'' + esc(o.id) + '\')">✓ Accept · earn ' + money(15) + '</button>'
+          + '<button class="btn secondary" style="width:100%;margin-top:8px" onclick="rejectOrder(\'' + esc(o.id) + '\')">✕ Skip this order</button>';
+    } else if (mine && s === 'Rider accepted'){
       btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="riderAction(\'' + esc(o.id) + '\',\'rider-arrived\')">📍 I arrived at vendor</button>';
-    }
-    else if (mine && (s === 'Rider arrived' || s === 'Food ready')){
+    } else if (mine && (s === 'Rider arrived' || s === 'Food ready')){
       btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="riderAction(\'' + esc(o.id) + '\',\'rider-picked-up\')">📦 I picked up food</button>';
-    }
-    else if (mine && s === 'Food picked up'){
+    } else if (mine && s === 'Food picked up'){
       btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="riderAction(\'' + esc(o.id) + '\',\'rider-arrived-customer\')">🏠 I arrived at customer</button>';
+    } else if (mine && s === 'Arrived at customer'){
+      btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="promptDeliveryPin(\'' + esc(o.id) + '\')">🔑 Enter customer PIN</button>';
     }
-    else if (mine && s === 'Arrived at customer'){
-      btn = '<button class="btn primary" style="width:100%;margin-top:10px" onclick="promptDeliveryPin(\'' + esc(o.id) + '\')">🔑 Enter customer PIN & complete</button>';
-    }
-
+    var noteHtml = o.note ? '<div style="background:#2b1f0f;border:1px solid #f3a11b;border-radius:10px;padding:10px;margin:8px 0;color:#f3a11b;font-size:13px"><b>📝 Note from customer:</b> ' + esc(o.note) + '</div>' : '';
     return '<div class="order-card">'
       + '<div class="row"><span class="order-id">#' + esc(o.id) + '</span><span class="badge gold">' + esc(s) + '</span></div>'
       + '<div class="muted" style="margin:6px 0">' + esc(o.vendor) + ' → ' + esc((o.delivery_address && o.delivery_address.text) || 'customer') + '</div>'
       + '<div class="muted" style="margin-bottom:8px">' + esc(items) + '</div>'
+      + noteHtml
       + '<div class="row"><span class="tot">' + money(o.total) + '</span><span class="comm">+' + money(o.rider_commission || 15) + '</span></div>'
-      + btn
-      + '</div>';
+      + btn + '</div>';
   }).join('');
 }
 
@@ -272,17 +270,22 @@ async function acceptOrder(id){
   if (!commission || commission <= 0) return;
   try {
     await api('/rider/orders/' + id + '/accept', { method:'POST', body: JSON.stringify({ commission: commission }) });
-    toast('Order accepted');
-    loadAssigned();
-    loadSummary();
+    toast('Order accepted'); loadAssigned(); loadSummary();
+  } catch(e){ toast(e.message); }
+}
+
+async function rejectOrder(id){
+  if (!confirm('Skip this delivery?')) return;
+  try {
+    await api('/rider/orders/' + id + '/reject', { method:'POST' });
+    toast('Order skipped'); loadAssigned();
   } catch(e){ toast(e.message); }
 }
 
 async function riderAction(id, action){
   try {
     await api('/orders/' + id + '/' + action, { method:'POST' });
-    toast('Updated');
-    loadAssigned();
+    toast('Updated'); loadAssigned();
   } catch(e){ toast(e.message); }
 }
 
@@ -292,9 +295,7 @@ async function promptDeliveryPin(id){
   try {
     var r = await api('/orders/' + id + '/verify-delivery', { method:'POST', body: JSON.stringify({ pin: pin }) });
     toast('Delivered! +' + money(r.commission) + ' earned 🎉');
-    loadAssigned();
-    loadSummary();
-    loadEarnings();
+    loadAssigned(); loadSummary(); loadEarnings();
   } catch(e){ toast(e.message); }
 }
 
@@ -331,26 +332,20 @@ function drawChart(series){
   var max = Math.max.apply(null, values.concat([20])) * 1.2;
   var gap = 8;
   var bw = (W - pad * 2 - gap * (values.length - 1)) / values.length;
-  
   ctx.strokeStyle = '#223029'; ctx.lineWidth = 1;
   for (var i = 0; i <= 4; i++){
     var y = pad + (H - pad * 2) * i / 4;
     ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
   }
-  
   var todayIdx = values.length - 1;
   values.forEach(function(v, i){
     var h = (v / max) * (H - pad * 2);
     var x = pad + i * (bw + gap);
     var y = H - pad - h;
     ctx.fillStyle = i === todayIdx ? '#33d17a' : '#1f8a56';
-    ctx.beginPath();
-    ctx.rect(x, y, bw, h);
-    ctx.fill();
-    
+    ctx.beginPath(); ctx.rect(x, y, bw, h); ctx.fill();
     ctx.fillStyle = '#9fb2a8'; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
     ctx.fillText(labels[i], x + bw / 2, H - 6);
-    
     ctx.fillStyle = '#d9e8e0'; ctx.font = 'bold 11px system-ui';
     ctx.fillText('\u20B5' + Math.round(v), x + bw / 2, y - 5);
   });
