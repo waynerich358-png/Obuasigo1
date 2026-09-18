@@ -11,34 +11,39 @@ body{margin:0;font-family:system-ui,sans-serif;background:#f5f7f6;color:#10231a}
 .top span{color:#f3a11b}
 .wrap{max-width:1100px;margin:auto;padding:22px}
 .card{background:#fff;border:1px solid #e7ece9;border-radius:16px;padding:20px;margin-bottom:14px}
-.btn{padding:12px 16px;border-radius:10px;font-weight:800;border:0;cursor:pointer;background:#087443;color:#fff;font-size:14px}
+.btn{padding:11px 14px;border-radius:10px;font-weight:800;border:0;cursor:pointer;background:#087443;color:#fff;font-size:13px}
 .btn.sec{background:#edf3ef;color:#087443}
 .btn.danger{background:#fdecec;color:#b02a2a}
 .btn.wide{width:100%}
-.input{width:100%;padding:13px;border:1px solid #dce4df;border-radius:10px;margin:6px 0 14px;font:inherit}
-label{font-size:13px;font-weight:700;color:#374b41;display:block;margin-top:6px}
-.badge{display:inline-block;padding:5px 10px;border-radius:999px;background:#edf7f1;color:#087443;font-size:12px;font-weight:800}
+.badge{display:inline-block;padding:4px 9px;border-radius:999px;background:#edf7f1;color:#087443;font-size:11.5px;font-weight:800}
 .badge.gold{background:#fff4e0;color:#a86a00}
-.muted{color:#6d7b74;font-size:14px}
-.mg{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
-.m{background:#fff;border:1px solid #e7ece9;border-radius:14px;padding:16px}
-.m b{display:block;font-size:24px;font-weight:900;margin-top:4px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eef2f0}
-th{color:#6d7b74;font-size:12px;text-transform:uppercase}
-.warn{background:#fff4e0;color:#7a4b00;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
-.err{background:#fdecec;color:#8a2020;padding:12px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:14px}
-.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:20px}
-.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:20px;text-align:center;cursor:pointer}
-.role .em{font-size:42px}
-.role b{display:block;margin-top:8px}
-.role small{display:block;color:#6d7b74;font-size:12px;margin-top:4px}
+.badge.red{background:#fdecec;color:#b02a2a}
+.badge.blue{background:#e0eef7;color:#0c5a8a}
+.muted{color:#6d7b74;font-size:13.5px}
+.mg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
+.m{background:#fff;border:1px solid #e7ece9;border-radius:14px;padding:14px}
+.m b{display:block;font-size:22px;font-weight:900;margin-top:2px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 7px;border-bottom:1px solid #eef2f0;vertical-align:top}
+th{color:#6d7b74;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.warn{background:#fff4e0;color:#7a4b00;padding:11px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:12px}
+.err{background:#fdecec;color:#8a2020;padding:11px;border-radius:10px;font-size:13px;font-weight:700;margin-bottom:12px}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:18px}
+.role{background:#fff;border:2px solid #e7ece9;border-radius:16px;padding:18px;text-align:center;cursor:pointer}
+.role .em{font-size:38px}
+.role b{display:block;margin-top:6px}
 .hidden{display:none}
 .status{background:#eef4f1;color:#374b41;padding:10px 12px;border-radius:10px;font-size:13px;margin-top:10px;text-align:center}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;border-bottom:1px solid #e7ece9}
+.tabs button{white-space:nowrap;background:transparent;border:0;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;color:#6d7b74;border-bottom:3px solid transparent}
+.tabs button.active{color:#087443;border-bottom-color:#087443}
 .qr-modal{position:fixed;inset:0;background:#000c;z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
 .qr-box{background:#fff;border-radius:20px;padding:22px;text-align:center;max-width:420px;width:100%}
 .qr-box img{width:100%;max-width:280px;margin:12px auto;display:block}
 .qr-code{font-family:monospace;font-size:22px;letter-spacing:4px;font-weight:900;background:#f2f6f4;padding:10px;border-radius:12px;margin:8px 0}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.detail{background:#f6faf8;padding:8px 10px;border-radius:8px;font-size:12.5px}
+.detail b{display:block;color:#6d7b74;font-weight:700;font-size:11px;text-transform:uppercase;margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -50,14 +55,14 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
     <div class="card" style="text-align:center">
       <span class="badge">SECURE STAFF ACCESS</span>
       <h1 style="margin:10px 0">Staff sign in</h1>
-      <p class="muted">Tap your role to sign in.</p>
+      <p class="muted">Tap your role.</p>
       <div class="roles">
-        <div class="role" onclick="quickLogin('+233241111111','admin')"><div class="em">🛡️</div><b>Admin</b><small>Full overview</small></div>
-        <div class="role" onclick="quickLogin('+233242222222','vendor')"><div class="em">🍽️</div><b>Vendor</b><small>Obuasi Kitchen</small></div>
-        <div class="role" onclick="quickLogin('+233243333333','hotel')"><div class="em">🏨</div><b>Hotel</b><small>Obuasi Royal Hotel</small></div>
+        <div class="role" onclick="quickLogin('+233241111111','admin')"><div class="em">🛡️</div><b>Admin</b></div>
+        <div class="role" onclick="quickLogin('+233242222222','vendor')"><div class="em">🍽️</div><b>Vendor</b></div>
+        <div class="role" onclick="quickLogin('+233243333333','hotel')"><div class="em">🏨</div><b>Hotel</b></div>
       </div>
       <div id="status" class="status" style="display:none"></div>
-      <div style="margin-top:14px">
+      <div style="margin-top:12px">
         <button class="btn sec" onclick="seedRoles()">🔧 Fix demo roles (run once)</button>
       </div>
     </div>
@@ -74,13 +79,14 @@ th{color:#6d7b74;font-size:12px;text-transform:uppercase}
         <button class="btn sec" onclick="signOut()">Sign out</button>
       </div>
     </div>
+    <div id="tabs"></div>
     <div id="body"></div>
   </div>
 </div>
 
 <script>
 var $ = function(id){ return document.getElementById(id); };
-var state = { token:'', user:null };
+var state = { token:'', user:null, tab:'overview', users:null };
 var lastOrderCount = 0;
 
 function money(n){ return 'GH\u20B5' + Number(n || 0).toFixed(2); }
@@ -111,10 +117,8 @@ function playBeep(){
 }
 
 async function seedRoles(){
-  try {
-    await api('/dev/seed-roles', { method:'POST' });
-    setStatus('✓ Roles seeded. Now tap a role card to sign in.');
-  } catch(e){ setStatus('Seed failed: ' + e.message); }
+  try { await api('/dev/seed-roles', { method:'POST' }); setStatus('✓ Roles seeded. Now tap a role card.'); }
+  catch(e){ setStatus('Seed failed: ' + e.message); }
 }
 
 async function quickLogin(phone, expectedRole){
@@ -126,7 +130,7 @@ async function quickLogin(phone, expectedRole){
     state.token = b.token; state.user = b.user;
     localStorage.setItem('obg_staff_token', b.token);
     if (['admin','superadmin','vendor','hotel'].indexOf(b.user.role) === -1){
-      setStatus('⚠ This number is registered as "' + b.user.role + '". Tap "Fix demo roles" first.');
+      setStatus('⚠ This number is "' + b.user.role + '". Tap "Fix demo roles" then try again.');
       return;
     }
     enter();
@@ -139,15 +143,46 @@ function enter(){
   var labels = { admin:'Administrator', superadmin:'Superadmin', vendor:'Vendor', hotel:'Hotel' };
   $('roleBadge').textContent = labels[state.user.role] || state.user.role;
   $('title').textContent = (labels[state.user.role] || state.user.role) + ' dashboard';
+  setupTabs();
   render();
   startPolling();
+}
+
+function setupTabs(){
+  var role = state.user.role;
+  var tabs = [];
+  if (role === 'admin' || role === 'superadmin'){
+    tabs = [
+      ['overview','Overview'],
+      ['orders','Orders'],
+      ['bookings','Bookings'],
+      ['customers','Customers'],
+      ['vendors','Vendors'],
+      ['hotels','Hotels'],
+      ['riders','Riders']
+    ];
+  } else if (role === 'vendor'){
+    tabs = [['orders','Incoming orders']];
+  } else if (role === 'hotel'){
+    tabs = [['bookings','Bookings']];
+  }
+  state.tab = tabs[0][0];
+  $('tabs').innerHTML = '<div class="tabs">' + tabs.map(function(t){
+    return '<button data-tab="' + t[0] + '" class="' + (t[0] === state.tab ? 'active' : '') + '" onclick="setTab(\'' + t[0] + '\')">' + t[1] + '</button>';
+  }).join('') + '</div>';
+}
+
+function setTab(t){
+  state.tab = t;
+  document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === t); });
+  render();
 }
 
 function startPolling(){
   if (window._poll) clearInterval(window._poll);
   window._poll = setInterval(function(){
     if ($('dash').classList.contains('hidden')) return;
-    if (state.user && ['vendor','hotel','admin','superadmin'].indexOf(state.user.role) !== -1) render();
+    render();
   }, 5000);
 }
 
@@ -156,116 +191,173 @@ function signOut(){
   if (window._poll) clearInterval(window._poll);
   localStorage.removeItem('obg_staff_token');
   $('dash').classList.add('hidden'); $('login').classList.remove('hidden');
-  $('status').style.display = 'none';
 }
 
 async function render(){
   var role = state.user.role;
   var box = $('body');
-  box.innerHTML = '<div class="card"><p class="muted">Loading ' + role + ' dashboard...</p></div>';
 
-  if (role === 'admin' || role === 'superadmin'){
+  // Load users for admin if on a user tab
+  if ((role === 'admin' || role === 'superadmin') && ['customers','vendors','hotels','riders'].indexOf(state.tab) !== -1){
+    if (!state.users) {
+      box.innerHTML = '<div class="card"><p class="muted">Loading users…</p></div>';
+      try { var u = await api('/admin/users'); state.users = u.grouped; }
+      catch(e){ box.innerHTML = '<div class="card"><p class="muted">' + esc(e.message) + '</p></div>'; return; }
+    }
+    renderUserTab(box, role, state.tab);
+    return;
+  }
+
+  if (state.tab === 'overview' && (role === 'admin' || role === 'superadmin')){
     var o = await api('/portal/overview').catch(function(){ return {}; });
-    var orders = await api('/portal/orders').catch(function(){ return []; });
-    var bookings = await api('/portal/bookings').catch(function(){ return []; });
     box.innerHTML =
       '<div class="mg">'
       + '<div class="m">Customers<b>' + (o.customers || 0) + '</b></div>'
-      + '<div class="m">Riders<b>' + (o.riders || 0) + '</b></div>'
       + '<div class="m">Vendors<b>' + (o.vendors || 0) + '</b></div>'
       + '<div class="m">Hotels<b>' + (o.hotels || 0) + '</b></div>'
+      + '<div class="m">Riders<b>' + (o.riders || 0) + '</b></div>'
       + '<div class="m">Orders<b>' + (o.orders || 0) + '</b></div>'
       + '<div class="m">Bookings<b>' + (o.bookings || 0) + '</b></div>'
-      + '<div class="m">Revenue<b>' + money(o.revenue || 0) + '</b></div>'
-      + '<div class="m">Checked-in<b>' + (o.checkedIn || 0) + '</b></div>'
+      + '<div class="m">Confirmed<b>' + money(o.confirmedRevenue || 0) + '</b></div>'
+      + '<div class="m">Completed<b>' + money(o.revenue || 0) + '</b></div>'
       + '</div>'
-      + '<div class="card"><h3 style="margin-top:0">All orders</h3>'
-      + (orders.length ?
-          '<table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>'
-          + orders.slice(0, 25).map(function(x){
+      + '<div class="warn">💰 <b>Confirmed revenue</b> = every order the customer has paid for (Payment confirmed onwards). <b>Completed revenue</b> = orders fully delivered and verified with the customer PIN.</div>';
+    return;
+  }
+
+  if (state.tab === 'orders'){
+    var vName = role === 'vendor' ? 'Obuasi Kitchen' : null;
+    var orders = await api(vName ? '/vendor/orders?vendor=' + encodeURIComponent(vName) : '/portal/orders').catch(function(){ return []; });
+    if (role === 'vendor' && orders.length > lastOrderCount && lastOrderCount > 0) playBeep();
+    lastOrderCount = orders.length;
+
+    if (role === 'vendor'){
+      var pending = orders.filter(function(x){ return ['Order created','Payment confirmed'].indexOf(x.status) !== -1; }).length;
+      box.innerHTML = '<div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or PINs.</div>'
+        + (pending > 0 ? '<div class="err">🔔 ' + pending + ' new order(s) waiting for approval!</div>' : '')
+        + '<div class="card"><h3 style="margin-top:0">Incoming orders (' + orders.length + ')</h3>'
+        + (orders.length ? orders.map(function(x){
+            var s = x.status;
+            var buttons = '';
+            if (s === 'Order created' || s === 'Payment confirmed'){
+              buttons = '<button class="btn" style="width:100%;margin-top:8px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ ACCEPT ORDER</button>'
+                      + '<button class="btn danger" style="width:100%;margin-top:6px" onclick="rejectOrder(\'' + esc(x.id) + '\')">✕ Reject</button>';
+            } else if (s === 'Restaurant accepted'){
+              buttons = '<button class="btn" style="width:100%;margin-top:8px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Food is ready</button>'
+                      + '<button class="btn sec" style="width:100%;margin-top:6px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR</button>';
+            } else if (s === 'Food ready'){
+              buttons = '<div class="badge gold" style="margin-top:8px">Waiting for rider…</div>'
+                      + '<button class="btn sec" style="width:100%;margin-top:6px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR</button>';
+            } else if (s === 'Rider accepted' || s === 'Rider arrived'){
+              buttons = '<button class="btn" style="width:100%;margin-top:8px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">📦 Hand food to rider</button>';
+            } else {
+              buttons = '<div class="badge" style="margin-top:8px">' + esc(s) + '</div>';
+            }
+            var note = x.note ? '<div style="background:#fff4e0;border-radius:8px;padding:8px;margin-top:6px;font-size:12.5px"><b>📝 Note:</b> ' + esc(x.note) + '</div>' : '';
+            return '<div style="border-bottom:1px solid #eef2f0;padding:12px 0">'
+              + '<div style="display:flex;justify-content:space-between"><b>#' + esc(x.id) + '</b><span class="badge gold">' + esc(s) + '</span></div>'
+              + (x.rider_phone ? '<div class="muted" style="margin-top:2px">🛵 Rider: ' + esc(x.rider_phone) + '</div>' : '')
+              + '<table style="margin-top:6px"><tbody>'
+              + x.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '×</td><td style="text-align:right">' + money(i.qty * i.price) + '</td></tr>'; }).join('')
+              + '</tbody></table>'
+              + note
+              + '<div style="text-align:right;margin-top:4px"><b>Total: ' + money(x.total) + '</b></div>'
+              + buttons + '</div>';
+          }).join('') : '<p class="muted">No orders yet.</p>')
+        + '</div>';
+    } else {
+      box.innerHTML = '<div class="card"><h3 style="margin-top:0">All orders (' + orders.length + ')</h3>'
+        + (orders.length ? '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Vendor</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead><tbody>'
+          + orders.map(function(x){
               return '<tr><td>#' + esc(x.id) + '</td><td>' + esc(x.vendor) + '</td><td>' + esc(x.customer_phone) + '</td><td>' + money(x.total) + '</td><td><span class="badge">' + esc(x.status) + '</span></td></tr>';
             }).join('')
-          + '</tbody></table>'
-          : '<p class="muted">No orders yet.</p>')
-      + '</div>'
-      + '<div class="card"><h3 style="margin-top:0">Hotel bookings</h3>'
-      + (bookings.length ?
-          '<table><thead><tr><th>ID</th><th>Hotel</th><th>Code</th><th>Status</th></tr></thead><tbody>'
-          + bookings.slice(0, 20).map(function(b){
-              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.hotel) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
-            }).join('')
-          + '</tbody></table>'
-          : '<p class="muted">No bookings yet.</p>')
-      + '</div>';
+          + '</tbody></table></div>' : '<p class="muted">No orders yet.</p>')
+        + '</div>';
+    }
+    return;
   }
 
-  else if (role === 'vendor'){
-    var vendorOrders = await api('/vendor/orders?vendor=' + encodeURIComponent('Obuasi Kitchen')).catch(function(){ return []; });
-    if (vendorOrders.length > lastOrderCount && lastOrderCount > 0) playBeep();
-    lastOrderCount = vendorOrders.length;
+  if (state.tab === 'bookings'){
+    var hName = role === 'hotel' ? 'Obuasi Royal Hotel' : null;
+    var bookings = await api(hName ? '/portal/bookings?hotel=' + encodeURIComponent(hName) : '/portal/bookings').catch(function(){ return []; });
+    box.innerHTML = (role === 'hotel' ? '<div class="warn">🔒 Hotel view — only your bookings.</div><div class="card" style="text-align:center"><a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:12px 20px">📷 Open QR Scanner</a></div>' : '')
+      + '<div class="card"><h3 style="margin-top:0">Bookings (' + bookings.length + ')</h3>'
+      + (bookings.length ? '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Hotel</th><th>Guest</th><th>Room</th><th>Code</th><th>Status</th></tr></thead><tbody>'
+        + bookings.map(function(b){
+            return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.hotel) + '</td><td>' + esc(b.customer_phone) + '</td><td>' + esc(b.room) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
+          }).join('')
+        + '</tbody></table></div>' : '<p class="muted">No bookings yet.</p>')
+      + '</div>';
+    return;
+  }
+}
 
-    var pending = vendorOrders.filter(function(x){ return ['Order created','Payment confirmed'].indexOf(x.status) !== -1; }).length;
-    
-    box.innerHTML =
-      '<div class="warn">🔒 Vendor view — you see items purchased, not customer phone numbers or PINs.</div>'
-      + (pending > 0 ? '<div class="err">🔔 ' + pending + ' new order(s) waiting for your approval!</div>' : '')
-      + '<div class="card"><h3 style="margin-top:0">Incoming orders (' + vendorOrders.length + ')</h3>'
-      + (vendorOrders.length ? vendorOrders.map(function(x){
-          var s = x.status;
-          var buttons = '';
-          if (s === 'Order created' || s === 'Payment confirmed'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'vendor-accept\')">✓ ACCEPT ORDER</button>'
-                    + '<button class="btn danger" style="width:100%;margin-top:8px" onclick="rejectOrder(\'' + esc(x.id) + '\')">✕ Reject</button>';
-          } else if (s === 'Restaurant accepted'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">🍽️ Food is ready</button>'
-                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR</button>';
-          } else if (s === 'Food ready'){
-            buttons = '<div class="badge gold" style="margin-top:10px;display:inline-block">Waiting for rider…</div>'
-                    + '<button class="btn sec" style="width:100%;margin-top:8px" onclick="showPickupQR(\'' + esc(x.id) + '\')">📷 Show pickup QR again</button>';
-          } else if (s === 'Rider accepted' || s === 'Rider arrived'){
-            buttons = '<button class="btn" style="width:100%;margin-top:10px" onclick="vendorAction(\'' + esc(x.id) + '\',\'food-ready\')">📦 Hand food to rider</button>';
-          } else {
-            buttons = '<div class="badge" style="margin-top:10px;display:inline-block">' + esc(s) + '</div>';
+function renderUserTab(box, role, tab){
+  var users = state.users || {};
+  var list = users[tab + 's'] || [];
+
+  var titles = { customers: '👥 Customers', vendors: '🍽️ Vendors & Restaurants', hotels: '🏨 Hotels', riders: '🛵 Riders' };
+  var headers;
+  if (tab === 'customers') headers = ['Name / Phone', 'Email', 'Address', 'Verified', 'Joined'];
+  else if (tab === 'vendors') headers = ['Business / Phone', 'License #', 'Address', 'Email', 'Verified'];
+  else if (tab === 'hotels') headers = ['Hotel / Phone', 'License #', 'Address', 'Email', 'Verified'];
+  else if (tab === 'riders') headers = ['Rider / Phone', 'Ghana Card', 'Driver License', 'Vehicle Reg', 'Vehicle License', 'Address'];
+  else headers = ['User'];
+
+  box.innerHTML = '<div class="card">'
+    + '<h3 style="margin-top:0">' + titles[tab] + ' (' + list.length + ')</h3>'
+    + '<div class="warn">🔓 Admin view — you can see every credential submitted by each account.</div>'
+    + (list.length ? '<div style="overflow-x:auto"><table><thead><tr>' + headers.map(function(h){ return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + list.map(function(u){
+          var row = '';
+          if (tab === 'customers'){
+            row = '<td><b>' + esc(u.full_name || '(no name)') + '</b><br><span class="muted">' + esc(u.phone) + '</span></td>'
+                + '<td>' + esc(u.email || '—') + '</td>'
+                + '<td>' + esc(u.address || '—') + '</td>'
+                + '<td>' + (u.verified ? '<span class="badge">✓</span>' : '<span class="badge gold">pending</span>') + '</td>'
+                + '<td>' + esc((u.created_at || '').slice(0, 10)) + '</td>';
+          } else if (tab === 'vendors' || tab === 'hotels'){
+            row = '<td><b>' + esc(u.business_name || u.full_name || '(no name)') + '</b><br><span class="muted">' + esc(u.phone) + '</span></td>'
+                + '<td style="font-family:monospace;font-size:12px">' + esc(u.business_license || '—') + '</td>'
+                + '<td>' + esc(u.address || '—') + '</td>'
+                + '<td>' + esc(u.email || '—') + '</td>'
+                + '<td>' + (u.verified ? '<span class="badge">✓</span>' : '<span class="badge gold">pending</span>') + '</td>';
+          } else if (tab === 'riders'){
+            row = '<td><b>' + esc(u.full_name || '(no name)') + '</b><br><span class="muted">' + esc(u.phone) + '</span></td>'
+                + '<td style="font-family:monospace;font-size:12px">' + esc(u.ghana_card || '—') + '</td>'
+                + '<td style="font-family:monospace;font-size:12px">' + esc(u.driver_license || '—') + '</td>'
+                + '<td style="font-family:monospace;font-size:12px">' + esc(u.vehicle_reg || '—') + '</td>'
+                + '<td style="font-family:monospace;font-size:12px">' + esc(u.vehicle_license || '—') + '</td>'
+                + '<td>' + esc(u.address || '—') + '</td>';
           }
-          var note = x.note ? '<div style="background:#fff4e0;border-radius:8px;padding:8px;margin-top:8px;font-size:13px"><b>📝 Customer note:</b> ' + esc(x.note) + '</div>' : '';
-          return '<div style="border-bottom:1px solid #eef2f0;padding:14px 0">'
-            + '<div style="display:flex;justify-content:space-between"><b>#' + esc(x.id) + '</b><span class="badge gold">' + esc(s) + '</span></div>'
-            + (x.rider_phone ? '<div class="muted" style="margin-top:4px">🛵 Rider: ' + esc(x.rider_phone) + '</div>' : '<div class="muted" style="margin-top:4px">No rider yet</div>')
-            + '<table style="margin-top:8px"><thead><tr><th>Item</th><th>Qty</th><th>Line</th></tr></thead><tbody>'
-            + x.items.map(function(i){ return '<tr><td>' + esc(i.name) + '</td><td>' + i.qty + '</td><td>' + money(i.qty * i.price) + '</td></tr>'; }).join('')
-            + '</tbody></table>'
-            + note
-            + '<div style="text-align:right;margin-top:6px"><b>Total: ' + money(x.total) + '</b></div>'
-            + buttons
-            + '</div>';
-        }).join('') : '<p class="muted">No incoming orders yet.</p>')
-      + '</div>';
-  }
+          return '<tr>' + row + '</tr>';
+        }).join('')
+      + '</tbody></table></div>' : '<p class="muted">No users yet.</p>')
+    + '</div>';
 
-  else if (role === 'hotel'){
-    var hotelBookings = await api('/portal/bookings?hotel=' + encodeURIComponent('Obuasi Royal Hotel')).catch(function(){ return []; });
-    box.innerHTML =
-      '<div class="warn">🔒 Hotel view — only your bookings. Scan the guest QR to check them in.</div>'
-      + '<div class="card" style="text-align:center">'
-      + '<a href="/scan.html" class="btn" style="text-decoration:none;display:inline-block;padding:14px 22px">📷 Open QR Scanner</a>'
-      + '</div>'
-      + '<div class="card"><h3 style="margin-top:0">Bookings (' + hotelBookings.length + ')</h3>'
-      + (hotelBookings.length ?
-          '<table><thead><tr><th>ID</th><th>Guest</th><th>Room</th><th>Code</th><th>Status</th></tr></thead><tbody>'
-          + hotelBookings.map(function(b){
-              return '<tr><td>#' + esc(b.id) + '</td><td>' + esc(b.customer_phone) + '</td><td>' + esc(b.room) + '</td><td style="font-family:monospace">' + esc(b.checkin_code || '') + '</td><td><span class="badge ' + (b.status === 'CHECKED IN' ? '' : 'gold') + '">' + esc(b.status) + '</span></td></tr>';
-            }).join('')
-          + '</tbody></table>'
-          : '<p class="muted">No bookings yet.</p>')
+  if (tab === 'riders' && list.length){
+    box.innerHTML += '<div class="card"><h3 style="margin-top:0">Rider details expanded</h3>'
+      + list.map(function(u){
+          return '<div style="border-bottom:1px solid #eef2f0;padding:12px 0">'
+            + '<div style="display:flex;justify-content:space-between"><b>' + esc(u.full_name || u.phone) + '</b><span class="badge">' + esc(u.phone) + '</span></div>'
+            + '<div class="detail-grid" style="margin-top:8px">'
+            + '<div class="detail"><b>Ghana Card</b>' + esc(u.ghana_card || '—') + '</div>'
+            + '<div class="detail"><b>Driver License</b>' + esc(u.driver_license || '—') + '</div>'
+            + '<div class="detail"><b>Vehicle Reg</b>' + esc(u.vehicle_reg || '—') + '</div>'
+            + '<div class="detail"><b>Vehicle License</b>' + esc(u.vehicle_license || '—') + '</div>'
+            + '<div class="detail"><b>Address</b>' + esc(u.address || '—') + '</div>'
+            + '<div class="detail"><b>Email</b>' + esc(u.email || '—') + '</div>'
+            + '<div class="detail"><b>Verified</b>' + (u.verified ? 'Yes' : 'Pending') + '</div>'
+            + '<div class="detail"><b>Last login</b>' + esc((u.last_login || '—').slice(0, 16).replace('T', ' ')) + '</div>'
+            + '</div></div>';
+        }).join('')
       + '</div>';
   }
 }
 
 async function vendorAction(id, action){
-  try {
-    await api('/orders/' + id + '/' + action, { method:'POST' });
-    render();
-  } catch(e){ alert(e.message); }
+  try { await api('/orders/' + id + '/' + action, { method:'POST' }); render(); }
+  catch(e){ alert(e.message); }
 }
 
 async function rejectOrder(id){
@@ -273,25 +365,23 @@ async function rejectOrder(id){
   if (reason === null) return;
   try {
     await api('/orders/' + id + '/vendor-reject', { method:'POST', body: JSON.stringify({ reason: reason }) });
-    alert('Order rejected');
-    render();
+    alert('Order rejected'); render();
   } catch(e){ alert(e.message); }
 }
 
 async function showPickupQR(id){
   try {
     var d = await api('/orders/' + id + '/pickup-qr');
-    var overlay = document.createElement('div');
-    overlay.className = 'qr-modal';
-    overlay.innerHTML =
-      '<div class="qr-box">'
+    var ov = document.createElement('div');
+    ov.className = 'qr-modal';
+    ov.innerHTML = '<div class="qr-box">'
       + '<h2 style="margin:0 0 6px">Rider pickup</h2>'
       + '<p class="muted" style="font-size:13px">Show this QR to the rider, or read the code aloud.</p>'
       + '<img src="' + d.png + '" alt="Pickup QR">'
       + '<div class="qr-code">' + d.code + '</div>'
       + '<button class="btn sec" style="width:100%;margin-top:12px" onclick="this.parentElement.parentElement.remove()">Close</button>'
       + '</div>';
-    document.body.appendChild(overlay);
+    document.body.appendChild(ov);
   } catch(e){ alert(e.message); }
 }
 
