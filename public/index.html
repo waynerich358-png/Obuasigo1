@@ -90,12 +90,10 @@ label{font-size:13px;font-weight:700;color:#374b41;display:block;margin-top:6px}
     <div class="section"><h2>Popular near you</h2><div class="grid" id="restaurantGrid"></div></div>
     <div class="section"><h2>Hotels &amp; stays</h2><div class="grid" id="hotelGrid"></div></div>
   </section>
-
   <section id="view-orders" class="view">
     <div class="row"><h2>Your orders</h2><button class="btn secondary" onclick="loadOrders()">Refresh</button></div>
     <div id="ordersList"><div class="empty">Sign in to see your orders.</div></div>
   </section>
-
   <section id="view-bookings" class="view">
     <div class="row"><h2>Your stays</h2><button class="btn secondary" onclick="loadBookings()">Refresh</button></div>
     <div id="bookingsList"><div class="empty">Sign in to see your bookings.</div></div>
@@ -115,11 +113,38 @@ label{font-size:13px;font-weight:700;color:#374b41;display:block;margin-top:6px}
 <div class="toast" id="toast"></div>
 
 <script>
+/* ---------- Catalog is INLINE — cards always render, no API needed for browsing ---------- */
+var RESTAURANTS = [
+  { id:'r1', name:'Obuasi Kitchen', emoji:'🍗', tags:'Jollof · Chicken', eta:'25-35 min',
+    items:[
+      { id:'i1', name:'Jollof + Chicken', price:38, emoji:'🍗' },
+      { id:'i2', name:'Fried Rice + Beef', price:42, emoji:'🍛' },
+      { id:'i3', name:'Chicken Wings (6pc)', price:30, emoji:'🍗' },
+      { id:'i4', name:'Soft Drink', price:8, emoji:'🥤' }
+    ]},
+  { id:'r2', name:'Pizza Hub Obuasi', emoji:'🍕', tags:'Pizza · Fast food', eta:'30-40 min',
+    items:[
+      { id:'i5', name:'Pepperoni Pizza', price:65, emoji:'🍕' },
+      { id:'i6', name:'Margherita', price:55, emoji:'🍕' },
+      { id:'i7', name:'Garlic Bread', price:20, emoji:'🥖' }
+    ]},
+  { id:'r3', name:'Ashanti Chop Bar', emoji:'🥘', tags:'Local food', eta:'20-30 min',
+    items:[
+      { id:'i8', name:'Fufu + Light Soup', price:34, emoji:'🥘' },
+      { id:'i9', name:'Banku + Tilapia', price:48, emoji:'🐟' },
+      { id:'i10', name:'Waakye Special', price:32, emoji:'🍚' }
+    ]}
+];
+
+var HOTELS = [
+  { id:'h1', name:'Obuasi Royal Hotel', room:'Executive Room', perks:'Wi-Fi · Breakfast', price:450 },
+  { id:'h2', name:'Golden View Lodge', room:'Comfort Room', perks:'Parking · Pool', price:320 }
+];
+
 var $ = function(id){ return document.getElementById(id); };
 var state = {
   token: localStorage.getItem('obg_token') || '',
   user: null,
-  catalog: { restaurants: [], hotels: [] },
   cart: JSON.parse(localStorage.getItem('obg_cart') || '[]'),
   orders: [], bookings: []
 };
@@ -157,81 +182,19 @@ function showView(name, btn){
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function openAuth(){
-  $('modal').classList.add('show');
-  $('sheet').innerHTML =
-    '<button class="close" onclick="closeSheet()">×</button>'
-    + '<h2>Sign in to ObuasiGo</h2>'
-    + '<p class="muted">We send a one-time code to your phone.</p>'
-    + '<label>Phone number</label>'
-    + '<input class="input" id="authPhone" placeholder="+233241234567" value="' + esc(state.user ? state.user.phone : '') + '">'
-    + '<button class="btn primary wide" id="authSend" onclick="sendOtp()">Send code</button>'
-    + '<div id="otpStep" style="display:none;margin-top:14px">'
-    + '<label>6-digit code</label>'
-    + '<input class="input" id="authCode" maxlength="6" placeholder="123456" inputmode="numeric">'
-    + '<button class="btn primary wide" onclick="verifyOtp()">Verify &amp; sign in</button>'
-    + '</div>';
-}
-
-async function sendOtp(){
-  var phone = $('authPhone').value.trim();
-  $('authSend').disabled = true;
-  try {
-    var d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
-    $('otpStep').style.display = 'block';
-    if (d.devOtp){ $('authCode').value = d.devOtp; toast('Dev OTP: ' + d.devOtp, 6000); }
-    else toast('Code sent to ' + phone);
-  } catch(e){ toast(e.message); }
-  $('authSend').disabled = false;
-}
-
-async function verifyOtp(){
-  var phone = $('authPhone').value.trim();
-  var code = $('authCode').value.trim();
-  try {
-    var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
-    state.token = d.token; state.user = d.user;
-    localStorage.setItem('obg_token', d.token);
-    closeSheet(); renderAccount();
-    toast('Welcome ' + (d.user.full_name || d.user.phone));
-    loadOrders(); loadBookings(); startOrderPolling();
-  } catch(e){ toast(e.message); }
-}
-
-function signOut(){
-  state.token = ''; state.user = null;
-  if (_orderPoll) clearInterval(_orderPoll);
-  localStorage.removeItem('obg_token');
-  renderAccount();
-  $('ordersList').innerHTML = '<div class="empty">Sign in to see your orders.</div>';
-  $('bookingsList').innerHTML = '<div class="empty">Sign in to see your bookings.</div>';
-  toast('Signed out');
-}
-
-function renderAccount(){
-  var u = state.user;
-  $('account').textContent = u ? (u.full_name || u.phone) : 'Guest';
-}
-
-async function loadMe(){
-  if (!state.token){ renderAccount(); return; }
-  try { var d = await api('/me'); state.user = d.user; }
-  catch(e){ state.token = ''; localStorage.removeItem('obg_token'); }
-  renderAccount();
-}
-
-async function loadCatalog(){
-  state.catalog = await api('/catalog');
-  $('restaurantGrid').innerHTML = state.catalog.restaurants.map(function(r){
+/* ---------- RENDER CATALOG (always works — data is inline) ---------- */
+function renderCatalog(){
+  $('restaurantGrid').innerHTML = RESTAURANTS.map(function(r){
+    var minPrice = r.items.reduce(function(m, i){ return i.price < m ? i.price : m; }, r.items[0].price);
     return '<article class="card">'
       + '<div class="food-img">' + r.emoji + '</div>'
       + '<b>' + esc(r.name) + '</b>'
       + '<p class="muted">' + esc(r.tags) + ' · ' + esc(r.eta) + '</p>'
-      + '<div class="price">From ' + money(Math.min.apply(null, r.items.map(function(i){ return i.price; }))) + '</div>'
+      + '<div class="price">From ' + money(minPrice) + '</div>'
       + '<button class="btn primary wide" onclick="openRestaurant(\'' + r.id + '\')">View menu</button>'
       + '</article>';
   }).join('');
-  $('hotelGrid').innerHTML = state.catalog.hotels.map(function(h){
+  $('hotelGrid').innerHTML = HOTELS.map(function(h){
     return '<article class="card">'
       + '<div class="food-img">🏨</div>'
       + '<b>' + esc(h.name) + '</b>'
@@ -243,7 +206,7 @@ async function loadCatalog(){
 }
 
 function openRestaurant(id){
-  var r = state.catalog.restaurants.filter(function(x){ return x.id === id; })[0];
+  var r = RESTAURANTS.filter(function(x){ return x.id === id; })[0];
   if (!r) return;
   $('modal').classList.add('show');
   $('sheet').innerHTML =
@@ -321,14 +284,14 @@ function openCart(){
 async function placeOrder(){
   if (!state.token){ closeSheet(); openAuth(); toast('Sign in to place order'); return; }
   var addr = ($('cartAddr').value || '').trim();
-  if (!addr) { toast('Add delivery address'); return; }
+  if (!addr){ toast('Add delivery address'); return; }
   var note = ($('cartNote').value || '').trim();
   var byVendor = {};
   state.cart.forEach(function(l){ if (!byVendor[l.vendor]) byVendor[l.vendor] = []; byVendor[l.vendor].push(l); });
   try {
     var created = [];
     var vendors = Object.keys(byVendor);
-    for (var i = 0; i < vendors.length; i++) {
+    for (var i = 0; i < vendors.length; i++){
       var vendor = vendors[i];
       var lines = byVendor[vendor];
       var total = lines.reduce(function(n, l){ return n + l.qty * l.price; }, 0) + DELIVERY_FEE;
@@ -363,31 +326,21 @@ function showPayment(order){
     + '</div>'
     + '<button class="btn primary wide" style="margin-bottom:8px" onclick="payNow(\'' + order.id + '\')">💳 Pay ' + money(order.total) + ' now</button>'
     + '<button class="btn secondary wide" onclick="payCash(\'' + order.id + '\')">💵 Cash on delivery</button>'
-    + '<button class="btn danger wide" style="margin-top:8px" onclick="closeSheet(); showView(\'orders\')">Pay later from Orders tab</button>';
+    + '<button class="btn danger wide" style="margin-top:8px" onclick="closeSheet(); showView(\'orders\')">Pay later</button>';
 }
 
 async function payNow(id){
-  try {
-    await api('/orders/' + id + '/pay', { method:'POST' });
-    toast('Payment confirmed 🎉 Vendor notified');
-    closeSheet(); showView('orders'); loadOrders();
-  } catch(e){ toast(e.message); }
+  try { await api('/orders/' + id + '/pay', { method:'POST' }); toast('Payment confirmed 🎉 Vendor notified'); closeSheet(); showView('orders'); loadOrders(); }
+  catch(e){ toast(e.message); }
 }
 async function payCash(id){
-  try {
-    await api('/orders/' + id + '/pay', { method:'POST' });
-    toast('Order sent (pay on delivery)');
-    closeSheet(); showView('orders'); loadOrders();
-  } catch(e){ toast(e.message); }
+  try { await api('/orders/' + id + '/pay', { method:'POST' }); toast('Order sent (pay on delivery)'); closeSheet(); showView('orders'); loadOrders(); }
+  catch(e){ toast(e.message); }
 }
-
 async function cancelOrder(id){
   if (!confirm('Cancel this order?')) return;
-  try {
-    await api('/orders/' + id + '/cancel', { method:'POST' });
-    toast('Order cancelled');
-    loadOrders();
-  } catch(e){ toast(e.message); }
+  try { await api('/orders/' + id + '/cancel', { method:'POST' }); toast('Order cancelled'); loadOrders(); }
+  catch(e){ toast(e.message); }
 }
 
 function startOrderPolling(){
@@ -405,18 +358,18 @@ async function loadOrders(){
     state.orders = await api('/orders');
     var now = state.orders.map(function(o){ return o.id + ':' + o.status; }).join(',');
     if (prev && prev !== now) toast('📢 Order status updated');
-    
+
     if (!state.orders.length){ $('ordersList').innerHTML = '<div class="empty">No orders yet.</div>'; return; }
-    
+
     var STEPS = ['Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready','Rider assigned','Rider accepted','Rider arrived','Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'];
-    
+
     $('ordersList').innerHTML = state.orders.map(function(o){
       var canPay = o.status === 'Order created';
       var canCancel = ['Order created','Payment confirmed','Restaurant accepted','Preparing'].indexOf(o.status) !== -1;
       var isCancelled = o.status === 'Cancelled by customer' || o.status === 'Rejected by vendor';
       var statusColor = o.status === 'Completed' ? '' : (isCancelled ? 'red' : 'gold');
       var currentIdx = STEPS.indexOf(o.status);
-      
+
       var buttons = '';
       if (canPay){
         buttons += '<button class="btn primary wide" style="margin-top:10px" onclick="payNow(\'' + o.id + '\')">💳 Pay ' + money(o.total) + ' now</button>';
@@ -425,11 +378,11 @@ async function loadOrders(){
       if (canCancel){
         buttons += '<button class="btn danger wide" style="margin-top:6px" onclick="cancelOrder(\'' + o.id + '\')">✕ Cancel order</button>';
       }
-      
+
       var pinBox = (!isCancelled && o.status !== 'Completed' && o.delivery_pin)
-        ? '<div class="summary" style="text-align:center"><div style="display:block"><span>Give this PIN to your rider when they arrive</span><div style="font-size:26px;letter-spacing:6px;font-weight:900;margin-top:4px">' + esc(o.delivery_pin) + '</div></div></div>'
+        ? '<div class="summary" style="text-align:center"><div style="display:block"><span>Give this PIN to your rider</span><div style="font-size:26px;letter-spacing:6px;font-weight:900;margin-top:4px">' + esc(o.delivery_pin) + '</div></div></div>'
         : '';
-      
+
       var timeline = '<div style="border-left:2px solid #cde5d8;margin:12px 0 0;padding-left:14px">'
         + ['Order created','Payment confirmed','Restaurant accepted','Food ready','Rider accepted','Food picked up','Arrived at customer','Completed'].map(function(label){
             var stepIdx = STEPS.indexOf(label);
@@ -437,24 +390,21 @@ async function loadOrders(){
             return '<div style="padding:5px 0;color:' + (done ? '#087443' : '#9ab7aa') + ';font-weight:700;font-size:13px">' + (done ? '✓ ' : '○ ') + label + '</div>';
           }).join('')
         + '</div>';
-      
+
       return '<div class="card" style="margin-bottom:14px">'
-        + '<div class="row">'
-        + '<div><span class="badge ' + statusColor + '">' + esc(o.status) + '</span>'
+        + '<div class="row"><div>'
+        + '<span class="badge ' + statusColor + '">' + esc(o.status) + '</span>'
         + '<h3 style="margin:8px 0 2px">#' + esc(o.id) + '</h3>'
-        + '<p class="muted">' + esc(o.vendor) + ' · ' + o.items.reduce(function(n, i){ return n + i.qty; }, 0) + ' item(s)</p></div>'
-        + '<div class="price">' + money(o.total) + '</div>'
-        + '</div>'
-        + pinBox
-        + timeline
-        + buttons
+        + '<p class="muted">' + esc(o.vendor) + ' · ' + o.items.reduce(function(n, i){ return n + i.qty; }, 0) + ' item(s)</p>'
+        + '</div><div class="price">' + money(o.total) + '</div></div>'
+        + pinBox + timeline + buttons
         + '</div>';
     }).join('');
   } catch(e){ $('ordersList').innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; }
 }
 
 function openBooking(hotelId){
-  var h = state.catalog.hotels.filter(function(x){ return x.id === hotelId; })[0];
+  var h = HOTELS.filter(function(x){ return x.id === hotelId; })[0];
   if (!h) return;
   var today = new Date().toISOString().slice(0, 10);
   var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
@@ -471,7 +421,7 @@ function openBooking(hotelId){
 
 async function createBooking(hotelId){
   if (!state.token){ closeSheet(); openAuth(); toast('Sign in to book'); return; }
-  var h = state.catalog.hotels.filter(function(x){ return x.id === hotelId; })[0];
+  var h = HOTELS.filter(function(x){ return x.id === hotelId; })[0];
   var ci = $('bkIn').value, co = $('bkOut').value, guests = Number($('bkGuests').value || 1);
   if (!ci || !co){ toast('Choose your dates'); return; }
   var nights = Math.max(1, Math.round((new Date(co) - new Date(ci)) / 86400000));
@@ -517,9 +467,74 @@ async function showBookingQr(id){
   }
 }
 
+/* ---------- Auth ---------- */
+function openAuth(){
+  $('modal').classList.add('show');
+  $('sheet').innerHTML =
+    '<button class="close" onclick="closeSheet()">×</button>'
+    + '<h2>Sign in to ObuasiGo</h2>'
+    + '<p class="muted">We send a one-time code to your phone.</p>'
+    + '<label>Phone number</label>'
+    + '<input class="input" id="authPhone" placeholder="+233241234567" value="' + esc(state.user ? state.user.phone : '') + '">'
+    + '<button class="btn primary wide" id="authSend" onclick="sendOtp()">Send code</button>'
+    + '<div id="otpStep" style="display:none;margin-top:14px">'
+    + '<label>6-digit code</label>'
+    + '<input class="input" id="authCode" maxlength="6" placeholder="123456" inputmode="numeric">'
+    + '<button class="btn primary wide" onclick="verifyOtp()">Verify &amp; sign in</button>'
+    + '</div>';
+}
+
+async function sendOtp(){
+  var phone = $('authPhone').value.trim();
+  $('authSend').disabled = true;
+  try {
+    var d = await api('/auth/request-otp', { method:'POST', body: JSON.stringify({ phone: phone }) });
+    $('otpStep').style.display = 'block';
+    if (d.devOtp){ $('authCode').value = d.devOtp; toast('Dev OTP: ' + d.devOtp, 6000); }
+    else toast('Code sent to ' + phone);
+  } catch(e){ toast(e.message); }
+  $('authSend').disabled = false;
+}
+
+async function verifyOtp(){
+  var phone = $('authPhone').value.trim();
+  var code = $('authCode').value.trim();
+  try {
+    var d = await api('/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: phone, code: code }) });
+    state.token = d.token; state.user = d.user;
+    localStorage.setItem('obg_token', d.token);
+    closeSheet(); renderAccount();
+    toast('Welcome ' + (d.user.full_name || d.user.phone));
+    loadOrders(); loadBookings(); startOrderPolling();
+  } catch(e){ toast(e.message); }
+}
+
+function signOut(){
+  state.token = ''; state.user = null;
+  if (_orderPoll) clearInterval(_orderPoll);
+  localStorage.removeItem('obg_token');
+  renderAccount();
+  $('ordersList').innerHTML = '<div class="empty">Sign in to see your orders.</div>';
+  $('bookingsList').innerHTML = '<div class="empty">Sign in to see your bookings.</div>';
+  toast('Signed out');
+}
+
+function renderAccount(){
+  var u = state.user;
+  $('account').textContent = u ? (u.full_name || u.phone) : 'Guest';
+}
+
+async function loadMe(){
+  if (!state.token){ renderAccount(); return; }
+  try { var d = await api('/me'); state.user = d.user; }
+  catch(e){ state.token = ''; localStorage.removeItem('obg_token'); }
+  renderAccount();
+}
+
+/* ---------- Boot ---------- */
+renderCatalog();
 renderCart();
 loadMe();
-loadCatalog().catch(function(){ toast('Could not load catalog'); });
 if (state.token){ loadOrders(); loadBookings(); startOrderPolling(); }
 </script>
 <script src="/menu.js"></script>
