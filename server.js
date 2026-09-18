@@ -1,6 +1,3 @@
-// ObuasiGo server.js
-// Safe syntax: no template literals, no arrow functions, no backticks.
-
 var express = require('express');
 var cors = require('cors');
 var jwt = require('jsonwebtoken');
@@ -20,10 +17,9 @@ var app = express();
 var PORT = process.env.PORT || 3000;
 var JWT_SECRET = process.env.JWT_SECRET;
 var SIGNING_SECRET = JWT_SECRET || crypto.randomBytes(32).toString('hex');
-if (!JWT_SECRET) console.warn('WARNING: JWT_SECRET not set. Using ephemeral secret.');
+if (!JWT_SECRET) console.warn('WARNING: JWT_SECRET not set.');
 
 app.set('trust proxy', 1);
-
 var allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
@@ -41,12 +37,10 @@ app.use(express.urlencoded({ extended: false, limit: '2mb' }));
 
 var apiLimiter = rateLimit({ windowMs: 60000, max: 200, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', apiLimiter);
-var authLimiter = rateLimit({ windowMs: 15*60*1000, max: 30, standardHeaders: true, legacyHeaders: false });
+var authLimiter = rateLimit({ windowMs: 900000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'deny', index: false }));
 var upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6*1024*1024 } });
-
-// -------- Database --------
 
 var pool = null;
 if (process.env.DATABASE_URL) {
@@ -69,50 +63,21 @@ function initDb() {
   var sql =
     "create extension if not exists pgcrypto;" +
     "create table if not exists users (id uuid primary key default gen_random_uuid(), phone text unique not null, email text, full_name text, role text default 'customer', verified boolean default false, status text default 'active', created_at timestamptz default now(), updated_at timestamptz default now());" +
-    "create table if not exists orders (id text primary key, customer_phone text not null, customer_name text, vendor text not null, items jsonb default '[]', subtotal numeric default 0, delivery_fee numeric default 8, total numeric default 0, currency text default 'GHS', status text default 'Order created', rider_phone text, pickup_code text default '4821', delivery_pin text default '7392', pickup_token text, pickup_scanned_at timestamptz, vendor_accepted_at timestamptz, rider_accepted_at timestamptz, rider_commission numeric default 15, delivery_address jsonb, note text, created_at timestamptz default now(), updated_at timestamptz default now());" +
+    "create table if not exists orders (id text primary key, customer_phone text not null, customer_name text, vendor text not null, items jsonb default '[]', subtotal numeric default 0, delivery_fee numeric default 8, total numeric default 0, currency text default 'GHS', status text default 'Order created', rider_phone text, pickup_code text, delivery_pin text, pickup_token text, pickup_scanned_at timestamptz, vendor_accepted_at timestamptz, rider_accepted_at timestamptz, rider_commission numeric default 15, delivery_address jsonb, note text, created_at timestamptz default now(), updated_at timestamptz default now());" +
     "create table if not exists bookings (id text primary key, customer_phone text not null, customer_name text, hotel text not null, room text not null, check_in date, check_out date, nights int default 1, guests int default 1, total numeric default 0, currency text default 'GHS', status text default 'BOOKED', checkin_code text not null, checked_in_at timestamptz, checked_in_by text, created_at timestamptz default now(), updated_at timestamptz default now());" +
     "create table if not exists rider_earnings (id bigserial primary key, rider_phone text not null, order_id text not null, amount numeric default 0, day date default current_date, created_at timestamptz default now());" +
     "create table if not exists audit_logs (id bigserial primary key, actor text, action text, entity_type text, entity_id text, meta jsonb, created_at timestamptz default now());" +
     "create index if not exists orders_customer_idx on orders(customer_phone, created_at desc);" +
     "create index if not exists orders_rider_idx on orders(rider_phone, updated_at desc);" +
     "create index if not exists bookings_hotel_idx on bookings(hotel, created_at desc);" +
-    "create index if not exists bookings_code_idx on bookings(checkin_code);" +
     "create index if not exists earnings_rider_day_idx on rider_earnings(rider_phone, day);";
-
-  return pool.query(sql).then(function(){
-    var alter =
-      "alter table orders add column if not exists pickup_token text;" +
-      "alter table orders add column if not exists pickup_scanned_at timestamptz;" +
-      "alter table orders add column if not exists vendor_accepted_at timestamptz;" +
-      "alter table orders add column if not exists rider_accepted_at timestamptz;" +
-      "alter table orders add column if not exists rider_commission numeric default 15;" +
-      "alter table orders add column if not exists subtotal numeric default 0;" +
-      "alter table orders add column if not exists delivery_fee numeric default 8;";
-    return pool.query(alter);
-  }).catch(function(e){
-    console.warn('Alter warning:', e.message);
-  });
+  return pool.query(sql).catch(function(e){ console.warn('DB init warning:', e.message); });
 }
 
-// -------- Memory fallback --------
+var mem = { users: new Map(), orders: new Map(), bookings: new Map(), earnings: [], audit: [] };
 
-var mem = {
-  users: new Map(),
-  orders: new Map(),
-  bookings: new Map(),
-  earnings: [],
-  audit: []
-};
-
-// -------- Helpers --------
-
-function normalizePhone(p) {
-  return String(p || '').replace(/[\s()\-]/g, '');
-}
-
-function validE164(p) {
-  return /^\+[1-9]\d{7,14}$/.test(p);
-}
+function normalizePhone(p) { return String(p || '').replace(/[\s()\-]/g, ''); }
+function validE164(p) { return /^\+[1-9]\d{7,14}$/.test(p); }
 
 var twilioOk = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID);
 var twilioClient = twilioOk ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN) : null;
@@ -160,10 +125,8 @@ function getUser(phone) {
 function upsertUser(phone) {
   var role = configuredRole(phone);
   if (pool) {
-    return q(
-      "insert into users(phone,role,verified) values($1,$2,true) on conflict(phone) do update set verified=true, role=case when $2='admin' then 'admin' else users.role end returning *",
-      [phone, role]
-    ).then(function(r){ return r[0]; });
+    return q("insert into users(phone,role,verified) values($1,$2,true) on conflict(phone) do update set verified=true, role=case when $2='admin' then 'admin' else users.role end returning *", [phone, role])
+      .then(function(r){ return r[0]; });
   }
   var u = mem.users.get(phone) || { phone: phone, role: role, verified: true };
   u.verified = true;
@@ -171,8 +134,6 @@ function upsertUser(phone) {
   mem.users.set(phone, u);
   return Promise.resolve(u);
 }
-
-// -------- Middleware --------
 
 function auth(req, res, next) {
   try {
@@ -195,17 +156,10 @@ function roles() {
 var adminOnly = roles('admin', 'superadmin');
 
 function audit(actor, action, type, id, meta) {
-  if (pool) {
-    return q(
-      'insert into audit_logs(actor,action,entity_type,entity_id,meta) values($1,$2,$3,$4,$5)',
-      [actor, action, type, id, JSON.stringify(meta || {})]
-    ).catch(function(){});
-  }
+  if (pool) return q('insert into audit_logs(actor,action,entity_type,entity_id,meta) values($1,$2,$3,$4,$5)', [actor, action, type, id, JSON.stringify(meta || {})]).catch(function(){});
   mem.audit.push({ actor: actor, action: action, type: type, id: id, meta: meta || {}, at: new Date().toISOString() });
   return Promise.resolve();
 }
-
-// -------- Health --------
 
 app.get('/api/health', function(req, res) {
   res.json({
@@ -219,8 +173,6 @@ app.get('/api/health', function(req, res) {
   });
 });
 
-// -------- Auth --------
-
 app.post('/api/auth/request-otp', authLimiter, function(req, res) {
   var phone = normalizePhone(req.body.phone);
   if (!validE164(phone)) return res.status(400).json({ error: 'Use international format e.g. +233241234567' });
@@ -228,30 +180,20 @@ app.post('/api/auth/request-otp', authLimiter, function(req, res) {
     var out = { ok: true, provider: r.provider };
     if (r.devOtp) out.devOtp = r.devOtp;
     res.json(out);
-  }).catch(function(e){
-    res.status(e.statusCode || 502).json({ error: 'Could not send OTP' });
-  });
+  }).catch(function(e){ res.status(e.statusCode || 502).json({ error: 'Could not send OTP' }); });
 });
 
 app.post('/api/auth/verify-otp', authLimiter, function(req, res) {
   var phone = normalizePhone(req.body.phone);
   var code = String(req.body.code || '').trim();
-  if (!validE164(phone) || !/^[0-9]{4,10}$/.test(code)) {
-    return res.status(400).json({ error: 'Invalid phone or OTP' });
-  }
+  if (!validE164(phone) || !/^[0-9]{4,10}$/.test(code)) return res.status(400).json({ error: 'Invalid phone or OTP' });
   verifyOtp(phone, code).then(function(c){
     if (c.status !== 'approved') return res.status(400).json({ error: 'Incorrect or expired OTP' });
     return upsertUser(phone).then(function(user){
-      var token = jwt.sign(
-        { phone: user.phone, role: user.role || 'customer', verified: true },
-        SIGNING_SECRET,
-        { expiresIn: '7d' }
-      );
+      var token = jwt.sign({ phone: user.phone, role: user.role || 'customer', verified: true }, SIGNING_SECRET, { expiresIn: '7d' });
       res.json({ ok: true, token: token, user: user });
     });
-  }).catch(function(){
-    res.status(502).json({ error: 'Could not verify OTP' });
-  });
+  }).catch(function(){ res.status(502).json({ error: 'Could not verify OTP' }); });
 });
 
 app.get('/api/me', auth, function(req, res) {
@@ -262,18 +204,15 @@ app.patch('/api/me', auth, function(req, res) {
   var fullName = String(req.body.fullName || '').slice(0, 120);
   var email = String(req.body.email || '').slice(0, 200);
   if (pool) {
-    q('update users set full_name=$1,email=$2,updated_at=now() where phone=$3 returning *',
-      [fullName, email, req.user.phone]).then(function(r){ res.json({ user: r[0] }); });
+    q('update users set full_name=$1,email=$2,updated_at=now() where phone=$3 returning *', [fullName, email, req.user.phone])
+      .then(function(r){ res.json({ user: r[0] }); });
     return;
   }
   var u = mem.users.get(req.user.phone) || { phone: req.user.phone, role: 'customer' };
-  u.full_name = fullName;
-  u.email = email;
+  u.full_name = fullName; u.email = email;
   mem.users.set(u.phone, u);
   res.json({ user: u });
 });
-
-// -------- Catalog --------
 
 var CATALOG = {
   restaurants: [
@@ -303,9 +242,7 @@ var CATALOG = {
   ]
 };
 
-app.get('/api/catalog', function(req, res) { res.json(CATALOG); });
-
-// -------- Orders --------
+app.get('/api/catalog', function(req, res){ res.json(CATALOG); });
 
 var ORDER_FLOW = [
   'Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready',
@@ -324,10 +261,7 @@ app.post('/api/orders', auth, function(req, res) {
   var items = Array.isArray(req.body.items) ? req.body.items : [];
   if (!items.length) return res.status(400).json({ error: 'Cart is empty' });
   var subtotal = 0;
-  var i;
-  for (i = 0; i < items.length; i++) {
-    subtotal += Number(items[i].price || 0) * Number(items[i].qty || 0);
-  }
+  for (var i = 0; i < items.length; i++) subtotal += Number(items[i].price || 0) * Number(items[i].qty || 0);
   var deliveryFee = Number(req.body.deliveryFee != null ? req.body.deliveryFee : 8);
   var total = Number(req.body.total != null ? req.body.total : (subtotal + deliveryFee));
 
@@ -349,26 +283,21 @@ app.post('/api/orders', auth, function(req, res) {
   };
 
   if (pool) {
-    q(
-      "insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
-      [order.id, order.customer_phone, order.customer_name, order.vendor, JSON.stringify(items),
-       subtotal, deliveryFee, total, order.status, order.pickup_code, order.delivery_pin,
-       JSON.stringify(order.delivery_address), order.note]
-    ).then(function(){
-      audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
-      res.status(201).json(order);
-    }).catch(function(e){ res.status(500).json({ error: e.message }); });
+    q("insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+      [order.id, order.customer_phone, order.customer_name, order.vendor, JSON.stringify(items), subtotal, deliveryFee, total, order.status, order.pickup_code, order.delivery_pin, JSON.stringify(order.delivery_address), order.note])
+      .then(function(){
+        audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
+        res.status(201).json(order);
+      }).catch(function(e){ res.status(500).json({ error: e.message }); });
     return;
   }
   mem.orders.set(order.id, order);
-  audit(req.user.phone, 'order.created', 'order', order.id, { total: total });
   res.status(201).json(order);
 });
 
 app.get('/api/orders', auth, function(req, res) {
   if (pool) {
-    q('select * from orders where customer_phone=$1 order by created_at desc', [req.user.phone])
-      .then(function(rows){ res.json(rows); });
+    q('select * from orders where customer_phone=$1 order by created_at desc', [req.user.phone]).then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
@@ -376,67 +305,38 @@ app.get('/api/orders', auth, function(req, res) {
   res.json(arr);
 });
 
-app.patch('/api/orders/:id/status', auth, function(req, res) {
-  var s = String(req.body.status || '').slice(0, 40);
-  if (ORDER_FLOW.indexOf(s) === -1) return res.status(400).json({ error: 'Invalid status' });
+app.post('/api/orders/:id/pay', auth, function(req, res) {
   if (pool) {
-    q('select * from orders where id=$1', [req.params.id]).then(function(r){
-      var existing = r[0];
-      if (!existing) return res.status(404).json({ error: 'Order not found' });
-      var canCustomer = existing.customer_phone === req.user.phone;
-      var canRider = existing.rider_phone === req.user.phone && req.user.role === 'rider';
-      var canOps = ['vendor','admin','superadmin'].indexOf(req.user.role) !== -1;
-      if (!canCustomer && !canRider && !canOps) return res.status(403).json({ error: 'Not allowed' });
-      return q(
-        "update orders set status=$1, updated_at=now(), rider_phone=coalesce($2, rider_phone) where id=$3 returning *",
-        [s, canRider ? req.user.phone : (req.body.riderPhone || null), req.params.id]
-      ).then(function(up){ res.json(up[0]); });
-    });
+    q("update orders set status='Payment confirmed', updated_at=now() where id=$1 and customer_phone=$2 returning *", [req.params.id, req.user.phone])
+      .then(function(r){
+        if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+        res.json(r[0]);
+      });
     return;
   }
   var o = mem.orders.get(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  if (o.customer_phone !== req.user.phone && ['vendor','rider','admin','superadmin'].indexOf(req.user.role) === -1) {
-    return res.status(403).json({ error: 'Not allowed' });
-  }
-  o.status = s;
-  if (req.user.role === 'rider') o.rider_phone = req.user.phone;
+  o.status = 'Payment confirmed';
   res.json(o);
 });
 
-// -------- Vendor workflow buttons --------
+// Vendor endpoints
+app.get('/api/vendor/orders', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  var vendorName = req.query.vendor || 'Obuasi Kitchen';
+  if (pool) {
+    q("select * from orders where vendor=$1 order by created_at desc limit 50", [vendorName]).then(function(rows){ res.json(rows); });
+    return;
+  }
+  var arr = [];
+  mem.orders.forEach(function(o){ if (o.vendor === vendorName) arr.push(o); });
+  res.json(arr);
+});
 
 app.post('/api/orders/:id/vendor-accept', auth, roles('vendor','admin','superadmin'), function(req, res) {
-  if (pool) {
-    q("update orders set status='Restaurant accepted', vendor_accepted_at=now(), updated_at=now() where id=$1 returning *",
-      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Order not found' });
-  o.status = 'Restaurant accepted';
-  o.vendor_accepted_at = new Date().toISOString();
-  res.json(o);
-});
-
-app.post('/api/orders/:id/food-ready', auth, roles('vendor','admin','superadmin'), function(req, res) {
-  if (pool) {
-    q("update orders set status='Food ready', updated_at=now() where id=$1 returning *",
-      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Order not found' });
-  o.status = 'Food ready';
-  res.json(o);
-});
-
-// Vendor approves and gets a pickup QR
-app.post('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','superadmin'), function(req, res) {
   var pickupToken = 'PCK-' + crypto.randomBytes(4).toString('hex').toUpperCase();
   if (pool) {
-    q("update orders set status='Restaurant accepted', pickup_token=$1, vendor_accepted_at=now(), updated_at=now() where id=$2 returning *",
-      [pickupToken, req.params.id]).then(function(r){
+    q("update orders set status='Restaurant accepted', pickup_token=$1, vendor_accepted_at=now(), updated_at=now() where id=$2 returning *", [pickupToken, req.params.id])
+      .then(function(r){
         if (!r[0]) return res.status(404).json({ error: 'Order not found' });
         res.json(r[0]);
       });
@@ -450,13 +350,42 @@ app.post('/api/orders/:id/vendor-approve', auth, roles('vendor','admin','superad
   res.json(o);
 });
 
+app.post('/api/orders/:id/vendor-reject', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  var reason = String(req.body.reason || 'Rejected by vendor').slice(0, 200);
+  if (pool) {
+    q("update orders set status='Rejected by vendor', note=coalesce(note,'') || ' | Reason: ' || $1, updated_at=now() where id=$2 returning *", [reason, req.params.id])
+      .then(function(r){
+        if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+        res.json(r[0]);
+      });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Rejected by vendor';
+  o.note = (o.note || '') + ' | Reason: ' + reason;
+  res.json(o);
+});
+
+app.post('/api/orders/:id/food-ready', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Food ready', updated_at=now() where id=$1 returning *", [req.params.id])
+      .then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Food ready';
+  res.json(o);
+});
+
 app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','rider'), function(req, res) {
   var getOrder;
   if (pool) getOrder = q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; });
   else getOrder = Promise.resolve(mem.orders.get(req.params.id));
   getOrder.then(function(order){
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!order.pickup_token) return res.status(400).json({ error: 'Not yet approved by vendor' });
+    if (!order.pickup_token) return res.status(400).json({ error: 'Not yet approved' });
     var token = jwt.sign({ t: 'pickup', id: order.id, code: order.pickup_token }, SIGNING_SECRET);
     return QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' }).then(function(png){
       res.json({ png: png, code: order.pickup_token, orderId: order.id });
@@ -464,12 +393,11 @@ app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','
   }).catch(function(e){ res.status(500).json({ error: e.message }); });
 });
 
-// -------- Rider workflow buttons --------
-
+// Rider endpoints
 app.post('/api/orders/:id/rider-arrived', auth, roles('rider','admin','superadmin'), function(req, res) {
   if (pool) {
-    q("update orders set status='Rider arrived', rider_phone=$1, updated_at=now() where id=$2 returning *",
-      [req.user.phone, req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    q("update orders set status='Rider arrived', rider_phone=$1, updated_at=now() where id=$2 returning *", [req.user.phone, req.params.id])
+      .then(function(r){ res.json(r[0] || { error: 'not found' }); });
     return;
   }
   var o = mem.orders.get(req.params.id);
@@ -481,21 +409,20 @@ app.post('/api/orders/:id/rider-arrived', auth, roles('rider','admin','superadmi
 
 app.post('/api/orders/:id/rider-picked-up', auth, roles('rider','admin','superadmin'), function(req, res) {
   if (pool) {
-    q("update orders set status='Food picked up', pickup_scanned_at=now(), updated_at=now() where id=$1 returning *",
-      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    q("update orders set status='Food picked up', pickup_scanned_at=now(), updated_at=now() where id=$1 returning *", [req.params.id])
+      .then(function(r){ res.json(r[0] || { error: 'not found' }); });
     return;
   }
   var o = mem.orders.get(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
   o.status = 'Food picked up';
-  o.pickup_scanned_at = new Date().toISOString();
   res.json(o);
 });
 
 app.post('/api/orders/:id/rider-arrived-customer', auth, roles('rider','admin','superadmin'), function(req, res) {
   if (pool) {
-    q("update orders set status='Arrived at customer', updated_at=now() where id=$1 returning *",
-      [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); });
+    q("update orders set status='Arrived at customer', updated_at=now() where id=$1 returning *", [req.params.id])
+      .then(function(r){ res.json(r[0] || { error: 'not found' }); });
     return;
   }
   var o = mem.orders.get(req.params.id);
@@ -516,10 +443,7 @@ app.post('/api/orders/:id/verify-delivery', auth, roles('rider','admin','superad
     var owner = order.rider_phone || req.user.phone;
     if (pool) {
       return q("update orders set status='Completed', updated_at=now() where id=$1", [order.id])
-        .then(function(){
-          return q("insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)",
-            [owner, order.id, commission]);
-        })
+        .then(function(){ return q("insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)", [owner, order.id, commission]); })
         .then(function(){ res.json({ ok: true, commission: commission }); });
     }
     order.status = 'Completed';
@@ -539,7 +463,6 @@ app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), functio
   }
   var orderId = decoded ? decoded.id : null;
   var tok = decoded ? decoded.code : code;
-
   if (pool) {
     var sql, params;
     if (orderId) { sql = 'select * from orders where id=$1 and pickup_token=$2'; params = [orderId, tok]; }
@@ -547,8 +470,8 @@ app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), functio
     q(sql, params).then(function(r){
       var order = r[0];
       if (!order) return res.status(404).json({ error: 'Order not found or wrong code' });
-      return q("update orders set status='Food picked up', rider_phone=$1, pickup_scanned_at=now(), updated_at=now() where id=$2 returning *",
-        [req.user.phone, order.id]).then(function(up){ res.json({ ok: true, order: up[0] }); });
+      return q("update orders set status='Food picked up', rider_phone=$1, pickup_scanned_at=now(), updated_at=now() where id=$2 returning *", [req.user.phone, order.id])
+        .then(function(up){ res.json({ ok: true, order: up[0] }); });
     });
     return;
   }
@@ -562,8 +485,6 @@ app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), functio
   found.rider_phone = req.user.phone;
   res.json({ ok: true, order: found });
 });
-
-// -------- Rider online verification --------
 
 app.post('/api/rider/online', auth, roles('rider','admin','superadmin'), function(req, res) {
   var code = String(1000 + Math.floor(Math.random() * 9000));
@@ -585,8 +506,8 @@ app.post('/api/rider/verify-online', auth, roles('rider','admin','superadmin'), 
 app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.phone;
   if (pool) {
-    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status <> 'Completed' order by created_at desc",
-      [phone]).then(function(rows){ res.json(rows); });
+    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status <> 'Completed' order by created_at desc", [phone])
+      .then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
@@ -615,6 +536,22 @@ app.post('/api/rider/orders/:id/accept', auth, roles('rider','admin','superadmin
   res.json(o);
 });
 
+app.post('/api/rider/orders/:id/reject', auth, roles('rider','admin','superadmin'), function(req, res) {
+  if (pool) {
+    q("update orders set status='Restaurant accepted', rider_phone=null, updated_at=now() where id=$1 returning *", [req.params.id])
+      .then(function(r){
+        if (!r[0]) return res.status(404).json({ error: 'Order not found' });
+        res.json(r[0]);
+      });
+    return;
+  }
+  var o = mem.orders.get(req.params.id);
+  if (!o) return res.status(404).json({ error: 'Order not found' });
+  o.status = 'Restaurant accepted';
+  o.rider_phone = null;
+  res.json(o);
+});
+
 app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.phone;
   if (pool) {
@@ -628,10 +565,7 @@ app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), functio
     return;
   }
   var assigned = 0, completed = 0, earnings = 0;
-  mem.orders.forEach(function(o){
-    if (o.rider_phone !== phone) return;
-    if (o.status === 'Completed') completed++; else assigned++;
-  });
+  mem.orders.forEach(function(o){ if (o.rider_phone === phone){ if (o.status === 'Completed') completed++; else assigned++; } });
   mem.earnings.forEach(function(x){ if (x.rider_phone === phone) earnings += x.amount; });
   res.json({ assigned: assigned, completed: completed, earnings: earnings });
 });
@@ -639,32 +573,29 @@ app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), functio
 app.get('/api/rider/earnings', auth, roles('rider','admin','superadmin'), function(req, res) {
   var phone = req.user.role === 'rider' ? req.user.phone : (req.query.rider || req.user.phone);
   var days = [];
-  var i;
-  for (i = 6; i >= 0; i--) {
+  for (var i = 6; i >= 0; i--) {
     var d = new Date();
     d.setDate(d.getDate() - i);
     days.push(d.toISOString().slice(0, 10));
   }
   if (pool) {
-    q("select day::text as day, sum(amount)::float as amount, count(*)::int as deliveries from rider_earnings where rider_phone=$1 and day >= current_date - interval '6 days' group by day",
-      [phone]).then(function(rows){
+    q("select day::text as day, sum(amount)::float as amount, count(*)::int as deliveries from rider_earnings where rider_phone=$1 and day >= current_date - interval '6 days' group by day", [phone])
+      .then(function(rows){
         var series = days.map(function(day){
           var r = rows.filter(function(x){ return x.day === day; })[0];
           return { day: day, amount: r ? Number(r.amount) : 0, deliveries: r ? r.deliveries : 0 };
         });
         var total = series.reduce(function(n, s){ return n + s.amount; }, 0);
-        var today = series[series.length - 1].amount;
-        res.json({ series: series, total: total, today: today, currency: 'GHS' });
+        res.json({ series: series, total: total, today: series[series.length-1].amount, currency: 'GHS' });
       });
     return;
   }
   var filtered = mem.earnings.filter(function(e){ return e.rider_phone === phone && days.indexOf(e.day) !== -1; });
   var rows = [];
-  var j, k;
-  for (j = 0; j < filtered.length; j++) {
+  for (var j = 0; j < filtered.length; j++) {
     var e = filtered[j];
     var row = null;
-    for (k = 0; k < rows.length; k++) if (rows[k].day === e.day) row = rows[k];
+    for (var k = 0; k < rows.length; k++) if (rows[k].day === e.day) row = rows[k];
     if (!row) { row = { day: e.day, amount: 0, deliveries: 0 }; rows.push(row); }
     row.amount += Number(e.amount);
     row.deliveries += 1;
@@ -674,12 +605,10 @@ app.get('/api/rider/earnings', auth, roles('rider','admin','superadmin'), functi
     return { day: day, amount: r ? r.amount : 0, deliveries: r ? r.deliveries : 0 };
   });
   var total = series.reduce(function(n, s){ return n + s.amount; }, 0);
-  var today = series[series.length - 1].amount;
-  res.json({ series: series, total: total, today: today, currency: 'GHS' });
+  res.json({ series: series, total: total, today: series[series.length-1].amount, currency: 'GHS' });
 });
 
-// -------- Bookings --------
-
+// Bookings
 app.post('/api/bookings', auth, function(req, res) {
   var hotel = String(req.body.hotel || '').slice(0, 80);
   var room = String(req.body.room || '').slice(0, 80);
@@ -703,11 +632,8 @@ app.post('/api/bookings', auth, function(req, res) {
   };
   if (pool) {
     q("insert into bookings(id,customer_phone,customer_name,hotel,room,check_in,check_out,nights,guests,total,status,checkin_code) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'BOOKED',$11)",
-      [booking.id, booking.customer_phone, booking.customer_name, hotel, room, checkIn, checkOut, nights, guests, total, checkinCode]
-    ).then(function(){
-      audit(req.user.phone, 'booking.created', 'booking', booking.id);
-      res.status(201).json(booking);
-    });
+      [booking.id, booking.customer_phone, booking.customer_name, hotel, room, checkIn, checkOut, nights, guests, total, checkinCode])
+      .then(function(){ res.status(201).json(booking); });
     return;
   }
   mem.bookings.set(booking.id, booking);
@@ -716,8 +642,7 @@ app.post('/api/bookings', auth, function(req, res) {
 
 app.get('/api/bookings', auth, function(req, res) {
   if (pool) {
-    q('select * from bookings where customer_phone=$1 order by created_at desc', [req.user.phone])
-      .then(function(rows){ res.json(rows); });
+    q('select * from bookings where customer_phone=$1 order by created_at desc', [req.user.phone]).then(function(rows){ res.json(rows); });
     return;
   }
   var arr = [];
@@ -731,11 +656,8 @@ app.get('/api/bookings/:id/qr', auth, function(req, res) {
   else getBooking = Promise.resolve(mem.bookings.get(req.params.id));
   getBooking.then(function(b){
     if (!b) return res.status(404).json({ error: 'Booking not found' });
-    if (b.customer_phone !== req.user.phone && ['hotel','admin','superadmin'].indexOf(req.user.role) === -1) {
-      return res.status(403).json({ error: 'Not allowed' });
-    }
-    var payload = { t: 'checkin', id: b.id, code: b.checkin_code, hotel: b.hotel, exp: Date.now() + 1000*60*60*24*30 };
-    var token = jwt.sign(payload, SIGNING_SECRET);
+    if (b.customer_phone !== req.user.phone && ['hotel','admin','superadmin'].indexOf(req.user.role) === -1) return res.status(403).json({ error: 'Not allowed' });
+    var token = jwt.sign({ t: 'checkin', id: b.id, code: b.checkin_code, hotel: b.hotel, exp: Date.now() + 1000*60*60*24*30 }, SIGNING_SECRET);
     return QRCode.toDataURL(token, { width: 512, margin: 1, errorCorrectionLevel: 'M' }).then(function(png){
       res.json({ png: png, code: b.checkin_code, bookingId: b.id });
     });
@@ -746,7 +668,6 @@ app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), funct
   var raw = String(req.body.qr || '').trim();
   var code = String(req.body.code || '').trim().toUpperCase();
   var findBooking;
-
   if (raw) {
     var decoded;
     try { decoded = jwt.verify(raw, SIGNING_SECRET); }
@@ -765,24 +686,20 @@ app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), funct
   } else {
     return res.status(400).json({ error: 'Send qr or code' });
   }
-
   findBooking.then(function(b){
     if (!b) return res.status(404).json({ error: 'Booking not found' });
     if (b.status === 'CHECKED IN') return res.json({ ok: true, alreadyCheckedIn: true, booking: b });
     if (pool) {
-      q("update bookings set status='CHECKED IN', checked_in_at=now(), checked_in_by=$1, updated_at=now() where id=$2 returning *",
-        [req.user.phone, b.id]).then(function(up){ res.json({ ok: true, booking: up[0] }); });
+      q("update bookings set status='CHECKED IN', checked_in_at=now(), checked_in_by=$1, updated_at=now() where id=$2 returning *", [req.user.phone, b.id])
+        .then(function(up){ res.json({ ok: true, booking: up[0] }); });
       return;
     }
     b.status = 'CHECKED IN';
-    b.checked_in_at = new Date().toISOString();
-    b.checked_in_by = req.user.phone;
     res.json({ ok: true, booking: b });
   });
 });
 
-// -------- Portal --------
-
+// Portal
 app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
   if (pool) {
     Promise.all([
@@ -804,33 +721,11 @@ app.get('/api/portal/overview', auth, adminOnly, function(req, res) {
     });
     return;
   }
-  var checkinCount = 0;
-  mem.bookings.forEach(function(b){ if (b.status === 'CHECKED IN') checkinCount++; });
+  var checkedIn = 0;
+  mem.bookings.forEach(function(b){ if (b.status === 'CHECKED IN') checkedIn++; });
   var revenue = 0;
   mem.orders.forEach(function(o){ if (o.status === 'Completed') revenue += o.total; });
-  res.json({ customers: 1, riders: 1, vendors: 1, hotels: 2, orders: mem.orders.size, bookings: mem.bookings.size, checkedIn: checkinCount, revenue: revenue });
-});
-
-app.get('/api/portal/orders', auth, roles('vendor','admin','superadmin'), function(req, res) {
-  if (req.user.role === 'vendor') {
-    var vendorName = String(req.query.vendor || '').trim();
-    if (!vendorName) return res.status(400).json({ error: 'vendor query required for vendors' });
-    if (pool) {
-      q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName]).then(function(rows){ res.json(rows); });
-      return;
-    }
-    var arr = [];
-    mem.orders.forEach(function(o){ if (o.vendor === vendorName) arr.push(o); });
-    res.json(arr);
-    return;
-  }
-  if (pool) {
-    q('select * from orders order by created_at desc limit 200').then(function(rows){ res.json(rows); });
-    return;
-  }
-  var all = [];
-  mem.orders.forEach(function(o){ all.push(o); });
-  res.json(all);
+  res.json({ customers: 1, riders: 1, vendors: 1, hotels: 2, orders: mem.orders.size, bookings: mem.bookings.size, checkedIn: checkedIn, revenue: revenue });
 });
 
 app.get('/api/portal/bookings', auth, roles('hotel','admin','superadmin'), function(req, res) {
@@ -849,113 +744,29 @@ app.get('/api/portal/bookings', auth, roles('hotel','admin','superadmin'), funct
   res.json(arr);
 });
 
-// -------- Payments --------
-
-function flwCall(pathname, body) {
-  return fetch('https://api.flutterwave.com/v3' + pathname, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + process.env.FLW_SECRET_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  }).then(function(r){
-    return r.json().then(function(d){
-      if (!r.ok) throw new Error(d.message || 'Flutterwave error');
-      return d;
-    });
-  });
-}
-
-app.post('/api/payments/checkout', auth, function(req, res) {
-  if (!process.env.FLW_SECRET_KEY) return res.status(503).json({ error: 'Flutterwave not configured' });
-  var amount = Number(req.body.amount);
-  if (!(amount > 0)) return res.status(400).json({ error: 'Invalid amount' });
-  var tx_ref = 'OBG-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-  var base = process.env.APP_URL || (req.protocol + '://' + req.get('host'));
-  flwCall('/payments', {
-    tx_ref: tx_ref, amount: amount, currency: 'GHS',
-    redirect_url: base + '/payment-return',
-    customer: {
-      email: req.body.email || (req.user.phone.replace('+', '') + '@obuasigo.app'),
-      name: req.body.name || 'ObuasiGo Customer',
-      phonenumber: req.user.phone
-    },
-    payment_options: 'card,ghanamobilemoney',
-    customizations: { title: 'ObuasiGo', description: req.body.description || 'ObuasiGo order' },
-    meta: { entity_type: req.body.entityType || 'order', entity_id: req.body.entityId || '' }
-  }).then(function(d){
-    res.json({ ok: true, tx_ref: tx_ref, link: d.data ? d.data.link : null });
-  }).catch(function(e){ res.status(502).json({ error: e.message }); });
-});
-
-app.post('/api/webhooks/flutterwave', express.raw({ type: 'application/json' }), function(req, res) {
-  var hash = req.headers['verif-hash'];
-  if (!process.env.FLW_SECRET_HASH || hash !== process.env.FLW_SECRET_HASH) return res.status(401).end();
-  var body;
-  try { body = JSON.parse(req.body.toString()); }
-  catch (e) { return res.status(400).end(); }
-  var tx = body.data || body;
-  if (tx.tx_ref) audit('flutterwave', 'webhook', 'payment', tx.tx_ref, { status: tx.status });
-  res.json({ ok: true });
-});
-
-// -------- Tracking --------
-
-var sockets = new Map();
-var WebSocket = null;
-try { WebSocket = require('ws'); } catch (e) { WebSocket = null; }
-
-function broadcast(orderId, msg) {
-  var set = sockets.get(orderId);
-  if (!set) return;
-  set.forEach(function(ws){ if (ws.readyState === 1) ws.send(JSON.stringify(msg)); });
-}
-
-app.post('/api/tracking/:orderId', auth, roles('rider','admin','superadmin'), function(req, res) {
-  var lat = Number(req.body.lat);
-  var lng = Number(req.body.lng);
-  if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: 'Invalid coordinates' });
-  var p = { orderId: req.params.orderId, lat: lat, lng: lng, accuracy: Number(req.body.accuracy || 0), at: new Date().toISOString() };
-  broadcast(p.orderId, { type: 'location', orderId: p.orderId, lat: p.lat, lng: p.lng, accuracy: p.accuracy, at: p.at });
-  res.json({ ok: true, p: p });
-});
-
-// -------- Push --------
-
-var vapidReady = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
-if (vapidReady) webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-
-app.get('/api/push/public-key', function(req, res) {
-  res.json({ configured: vapidReady, publicKey: vapidReady ? process.env.VAPID_PUBLIC_KEY : null });
-});
-
-app.post('/api/push/subscribe', auth, function(req, res) {
-  if (!vapidReady) return res.status(503).json({ error: 'Push not configured' });
-  var sub = req.body.subscription;
-  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Invalid subscription' });
-  res.json({ ok: true });
-});
-
-// -------- Documents --------
-
-app.post('/api/documents', auth, upload.single('document'), function(req, res) {
-  if (!req.file) return res.status(400).json({ error: 'File required' });
-  var allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-  if (allowed.indexOf(req.file.mimetype) === -1) return res.status(400).json({ error: 'JPG, PNG or PDF only' });
-  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_STORAGE_BUCKET) {
-    var sb = require('@supabase/supabase-js').createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-    var filePath = 'documents/' + req.user.phone.replace(/\W/g, '_') + '/' + Date.now() + '-' + req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    sb.storage.from(process.env.SUPABASE_STORAGE_BUCKET)
-      .upload(filePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false })
-      .then(function(up){
-        if (up.error) return res.status(502).json({ error: 'Storage failed' });
-        res.status(201).json({ ok: true, url: up.data.path });
-      });
+app.get('/api/portal/orders', auth, roles('vendor','admin','superadmin'), function(req, res) {
+  if (req.user.role === 'vendor') {
+    var vendorName = String(req.query.vendor || '').trim();
+    if (!vendorName) return res.status(400).json({ error: 'vendor query required' });
+    if (pool) {
+      q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName]).then(function(rows){ res.json(rows); });
+      return;
+    }
+    var arr = [];
+    mem.orders.forEach(function(o){ if (o.vendor === vendorName) arr.push(o); });
+    res.json(arr);
     return;
   }
-  res.status(201).json({ ok: true, url: null });
+  if (pool) {
+    q('select * from orders order by created_at desc limit 200').then(function(rows){ res.json(rows); });
+    return;
+  }
+  var all = [];
+  mem.orders.forEach(function(o){ all.push(o); });
+  res.json(all);
 });
 
-// -------- Static routes --------
-
+// Static routes
 app.get('/payment-return', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'payment-return.html')); });
 app.get('/portal', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
 app.get('/portal.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
@@ -965,33 +776,10 @@ app.get('/rider', function(req, res){ res.sendFile(path.join(__dirname, 'public'
 app.get('/rider.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'rider.html')); });
 app.get('*', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
-// -------- Start --------
-
 var httpServer = require('http').createServer(app);
 
-if (WebSocket) {
-  var wss = new WebSocket.Server({ server: httpServer, path: '/ws' });
-  wss.on('connection', function(ws, req) {
-    var u = new URL(req.url, 'http://localhost');
-    var orderId = u.searchParams.get('orderId');
-    var token = u.searchParams.get('token');
-    try { jwt.verify(token || '', SIGNING_SECRET); }
-    catch (e) { return ws.close(1008, 'Unauthorized'); }
-    if (!orderId) return ws.close(1008, 'Order required');
-    if (!sockets.has(orderId)) sockets.set(orderId, new Set());
-    sockets.get(orderId).add(ws);
-    ws.on('close', function(){
-      var set = sockets.get(orderId);
-      if (set) set.delete(ws);
-    });
-    ws.send(JSON.stringify({ type: 'connected', orderId: orderId }));
-  });
-}
-
 initDb().then(function(){
-  httpServer.listen(PORT, function(){
-    console.log('ObuasiGo listening on ' + PORT);
-  });
+  httpServer.listen(PORT, function(){ console.log('ObuasiGo listening on ' + PORT); });
 }).catch(function(e){
   console.error('DB init failed', e);
   process.exit(1);
