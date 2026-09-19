@@ -1,746 +1,214 @@
-var express = require('express');
-var cors = require('cors');
-var jwt = require('jsonwebtoken');
-var path = require('path');
-var crypto = require('crypto');
-var twilio = require('twilio');
-var pg = require('pg');
-var Pool = pg.Pool;
-var multer = require('multer');
-var helmet = require('helmet');
-var rateLimit = require('express-rate-limit');
-var webpush = require('web-push');
-var QRCode = require('qrcode');
-require('dotenv').config();
-
-var app = express();
-var PORT = process.env.PORT || 3000;
-var JWT_SECRET = process.env.JWT_SECRET;
-var SIGNING_SECRET = JWT_SECRET || crypto.randomBytes(32).toString('hex');
-
-app.set('trust proxy', 1);
-var allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
-
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(cors({
-  origin: function(origin, cb){
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.indexOf(origin) !== -1) return cb(null, true);
-    cb(new Error('Origin not allowed'));
-  },
-  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-  credentials: false
-}));
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: false, limit: '2mb' }));
-
-app.use('/api/', rateLimit({ windowMs: 60000, max: 200, standardHeaders: true, legacyHeaders: false }));
-var authLimiter = rateLimit({ windowMs: 900000, max: 30, standardHeaders: true, legacyHeaders: false });
-
-app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'deny', index: false }));
-var upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6*1024*1024 } });
-
-var pool = null;
-if (process.env.DATABASE_URL) {
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }
-  });
+const express=require('express');const cors=require('cors');const jwt=require('jsonwebtoken');const path=require('path');const crypto=require('crypto');const twilio=require('twilio');const {Pool}=require('pg');const multer=require('multer');const helmet=require('helmet');const rateLimit=require('express-rate-limit');const webpush=require('web-push');const QRCode=require('qrcode');require('dotenv').config();
+const app=express();const PORT=process.env.PORT||3000;const JWT_SECRET=process.env.JWT_SECRET;
+// For hosted demos, allow startup without a configured JWT secret. Set JWT_SECRET in Render for persistent production sessions.
+const SIGNING_SECRET=JWT_SECRET||crypto.randomBytes(32).toString('hex');
+if(!JWT_SECRET) console.warn('WARNING: JWT_SECRET is not configured. A temporary signing secret is being used; sessions reset after restart.');
+app.set('trust proxy',1);
+const allowedOrigins=(process.env.ALLOWED_ORIGINS||'').split(',').map(x=>x.trim()).filter(Boolean);
+app.use(helmet({contentSecurityPolicy:false,referrerPolicy:{policy:'no-referrer'},crossOriginEmbedderPolicy:false}));
+app.use(cors({origin:(origin,cb)=>{if(!origin||allowedOrigins.length===0||allowedOrigins.includes(origin))return cb(null,true);cb(new Error('Origin not allowed'));},methods:['GET','POST','PATCH','PUT','DELETE','OPTIONS'],allowedHeaders:['Content-Type','Authorization'],credentials:false}));
+app.use(express.json({limit:'1mb'}));app.use(express.urlencoded({extended:false,limit:'1mb'}));
+const apiLimiter=rateLimit({windowMs:60*1000,max:120,standardHeaders:true,legacyHeaders:false,message:{error:'Too many requests'}});
+app.use('/api/',apiLimiter);
+app.use(express.static(path.join(__dirname,'public'),{dotfiles:'deny',index:false}));
+const authLimiter=rateLimit({windowMs:15*60*1000,max:20,standardHeaders:true,legacyHeaders:false});
+const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:6*1024*1024}});
+const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==='false'?false:{rejectUnauthorized:false}}):null;
+const memory={users:new Map(),orders:new Map(),bookings:new Map(),payments:new Map(),documents:new Map(),tracking:new Map(),push:new Map(),feedback:new Map(),audit:[],businesses:new Map(),catalog:new Map(),applications:new Map(),riders:new Map(),adminRequests:new Map(),referrals:new Map(),referralCodes:new Map()};
+async function q(text,params=[]){if(!pool)throw new Error('DATABASE_NOT_CONFIGURED');return (await pool.query(text,params)).rows}
+async function initDb(){
+ if(!pool)return;
+ await pool.query(`
+  create extension if not exists pgcrypto;
+  create table if not exists users(id uuid primary key default gen_random_uuid(),phone text unique not null,email text,full_name text,role text default 'customer',verified boolean default false,status text default 'active',created_at timestamptz default now(),updated_at timestamptz default now());
+  create table if not exists role_applications(id uuid primary key default gen_random_uuid(),phone text not null references users(phone) on delete cascade,requested_role text not null,business_name text,notes text,status text not null default 'pending',created_at timestamptz default now(),reviewed_at timestamptz);
+  create table if not exists orders(id text primary key,customer_phone text not null,vendor text,items jsonb default '[]',total numeric default 0,status text,created_at timestamptz default now(),updated_at timestamptz default now(),rider_phone text,pickup_code text default '4821',delivery_pin text default '7392',delivery_lat double precision,delivery_lng double precision,delivery_address text);
+  create table if not exists order_feedback(id uuid primary key default gen_random_uuid(),order_id text unique not null,customer_phone text not null,rider_phone text,rating integer not null check(rating between 1 and 5),comment text default '',created_at timestamptz default now());
+  create table if not exists bookings(id text primary key,customer_phone text not null,hotel text,room text,total numeric default 0,status text,created_at timestamptz default now(),updated_at timestamptz default now());
+  create table if not exists payments(tx_ref text primary key,user_phone text,entity_type text,entity_id text,amount numeric,currency text default 'GHS',status text default 'pending',provider text default 'flutterwave',transaction_id text,created_at timestamptz default now());
+  create table if not exists tracking_points(id bigserial primary key,order_id text,lat double precision,lng double precision,accuracy double precision,created_at timestamptz default now());
+  create table if not exists documents(id uuid primary key default gen_random_uuid(),user_phone text,doc_type text,file_url text,status text default 'pending',created_at timestamptz default now());
+  create table if not exists push_subscriptions(id uuid primary key default gen_random_uuid(),user_phone text,endpoint text unique,subscription jsonb,created_at timestamptz default now());
+  create table if not exists audit_logs(id bigserial primary key,actor text,action text,entity_type text,entity_id text,meta jsonb,created_at timestamptz default now());
+ `);
+ await pool.query(`
+  create table if not exists business_profiles(
+   id uuid primary key default gen_random_uuid(), owner_phone text not null references users(phone) on delete cascade,
+   kind text not null check(kind in ('vendor','hotel')), business_name text not null, business_phone text, email text,
+   address text, description text, ghana_card_name text, ghana_card_number text, registration_number text,
+   status text not null default 'pending' check(status in ('pending','approved','rejected')),
+   metadata jsonb not null default '{}', created_at timestamptz default now(), updated_at timestamptz default now());
+  create unique index if not exists business_owner_kind_idx on business_profiles(owner_phone,kind);
+  create table if not exists catalog_items(
+   id uuid primary key default gen_random_uuid(), business_id uuid not null references business_profiles(id) on delete cascade,
+   name text not null, category text, price numeric(12,2) not null default 0, description text default '', active boolean not null default true,
+   created_at timestamptz default now(), updated_at timestamptz default now());
+  create index if not exists catalog_search_idx on catalog_items(lower(name),lower(category));
+  create table if not exists rider_profiles(
+   phone text primary key references users(phone) on delete cascade, full_name text, ghana_card_name text, ghana_card_number text,
+   license_number text, vehicle_type text, plate_number text, address text, emergency_phone text,
+   status text not null default 'pending' check(status in ('pending','approved','rejected')),
+   metadata jsonb not null default '{}', created_at timestamptz default now(), updated_at timestamptz default now());
+  create table if not exists admin_access_requests(
+   id uuid primary key default gen_random_uuid(), phone text not null references users(phone) on delete cascade, full_name text,
+   ghana_card_number text, reason text, status text not null default 'pending' check(status in ('pending','approved','rejected')),
+   created_at timestamptz default now(), reviewed_at timestamptz);
+  create index if not exists role_apps_status_idx on role_applications(status,created_at);
+  create index if not exists admin_requests_status_idx on admin_access_requests(status,created_at);
+  create table if not exists referral_codes(
+   code text primary key, phone text unique not null references users(phone) on delete cascade, created_at timestamptz default now()
+  );
+  create table if not exists referrals(
+   id uuid primary key default gen_random_uuid(), inviter_phone text not null references users(phone) on delete cascade,
+   invitee_phone text not null unique references users(phone) on delete cascade, referral_code text not null references referral_codes(code),
+   status text not null default 'joined' check(status in ('joined','qualified')), created_at timestamptz default now(), qualified_at timestamptz
+  );
+  create unique index if not exists referrals_code_idx on referrals(referral_code);
+  create index if not exists referrals_inviter_idx on referrals(inviter_phone,created_at desc);
+ `);
 }
-
-function q(text, params) {
-  if (!pool) return Promise.reject(new Error('DATABASE_NOT_CONFIGURED'));
-  return pool.query(text, params || []).then(function(r){ return r.rows; });
+function normalizePhone(p){return String(p||'').replace(/[\s()-]/g,'')}function validE164(p){return /^\+[1-9]\d{7,14}$/.test(p)}
+const twilioConfigured=!!(process.env.TWILIO_ACCOUNT_SID&&process.env.TWILIO_AUTH_TOKEN&&process.env.TWILIO_VERIFY_SERVICE_SID);const twilioClient=twilioConfigured?twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN):null;
+async function sendOtp(phone){if(twilioConfigured){const v=await twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verifications.create({to:phone,channel:'sms'});return{provider:'twilio',status:v.status}}if(process.env.DEV_OTP==='true'){global.devOtps=global.devOtps||new Map();const code=String(Math.floor(100000+Math.random()*900000));global.devOtps.set(phone,{code,expires:Date.now()+300000});console.log('[DEV OTP]',phone,code);return{provider:'development',status:'pending',devOtp:code}}throw Object.assign(new Error('OTP service not configured'),{statusCode:503})}
+async function verifyOtp(phone,code){if(twilioConfigured)return twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verificationChecks.create({to:phone,code});const r=global.devOtps?.get(phone);if(!r||Date.now()>r.expires)return{status:'canceled'};global.devOtps.delete(phone);return{status:r.code===code?'approved':'pending'}}
+async function getUser(phone){if(pool){const r=await q('select * from users where phone=$1',[phone]);return r[0]}return memory.users.get(phone)}
+function configuredRole(phone){const admins=(process.env.ADMIN_PHONES||'').split(',').map(normalizePhone).filter(Boolean);return admins.includes(phone)?'admin':'customer'}
+async function getRoleProfile(phone,kind){if(pool){return (await q('select * from business_profiles where owner_phone=$1 and kind=$2 order by created_at desc limit 1',[phone,kind]))[0]||null}return [...memory.businesses.values()].find(x=>x.owner_phone===phone&&x.kind===kind)||null}
+function cleanText(v,n=160){return String(v||'').trim().slice(0,n)}
+function publicSearchSeed(){return [
+{id:'seed-food-1',type:'food',icon:'🍗',name:'Jollof + Chicken',vendor:'Obuasi Kitchen',price:38,tags:'jollof rice chicken food ghana meal lunch dinner'},
+{id:'seed-food-2',type:'food',icon:'🍕',name:'Pizza',vendor:'Pizza Hub Obuasi',price:55,tags:'pizza food cheese pepperoni fast food'},
+{id:'seed-food-3',type:'food',icon:'🥘',name:'Local Meal',vendor:'Ashanti Chop Bar',price:32,tags:'local food fufu banku soup ampesi chop bar'},
+{id:'seed-food-4',type:'food',icon:'🍰',name:'Pastry',vendor:'Sweet Crumbs',price:18,tags:'bakery pastry cake bread dessert'},
+{id:'seed-food-5',type:'food',icon:'🍔',name:'Burger',vendor:'Obuasi Kitchen',price:42,tags:'burger food fast food beef chicken'},
+{id:'seed-food-6',type:'food',icon:'🍟',name:'Chicken & Chips',vendor:'Obuasi Kitchen',price:45,tags:'chicken chips fries food'},
+{id:'seed-food-7',type:'food',icon:'🥤',name:'Soft Drink',vendor:'Sweet Crumbs',price:10,tags:'drink drinks soda beverage'},
+{id:'seed-hotel-1',type:'hotel',icon:'🏨',name:'Executive Room',vendor:'Obuasi Royal Hotel',price:450,tags:'hotel room stay accommodation wifi breakfast'},
+{id:'seed-hotel-2',type:'hotel',icon:'🏨',name:'Comfort Room',vendor:'Golden View Lodge',price:320,tags:'hotel room stay accommodation parking lodge'}
+]}
+async function searchCatalog(raw,type){
+ const needle=cleanText(raw,120).toLowerCase();const words=needle.split(/\s+/).filter(Boolean);const matches=(x)=>{if(type&&type!=='all'&&x.type!==type)return false;if(!needle)return true;const text=[x.name,x.vendor,x.tags,x.type].join(' ').toLowerCase();return text.includes(needle)||words.every(w=>text.includes(w))};
+ const seeds=publicSearchSeed();let out=seeds.filter(matches);
+ if(pool){const like=needle||'';const biz=await q(`select b.id,b.kind,b.business_name,b.address,b.description,c.id as item_id,c.name,c.category,c.price,c.description as item_description from business_profiles b left join catalog_items c on c.business_id=b.id and c.active=true where b.status='approved' and ($1='' or lower(b.business_name||'') like '%'||lower($1)||'%' or lower(coalesce(b.description,'')) like '%'||lower($1)||'%' or lower(coalesce(c.name,'')) like '%'||lower($1)||'%' or lower(coalesce(c.category,'')) like '%'||lower($1)||'%') order by b.created_at desc limit 100`,[like]);for(const x of biz){const isHotel=x.kind==='hotel';if(type&&type!=='all'&&x.kind!==type)continue;const item={id:x.item_id||x.id,type:x.kind,icon:isHotel?'🏨':'🍽️',name:x.name||(isHotel?x.business_name:'Menu'),vendor:x.business_name,price:Number(x.price||0),tags:[x.category,x.address,x.description,x.item_description].filter(Boolean).join(' '),businessId:x.id};if(matches(item))out.push(item)}}
+ return out;
 }
-
-var DEMO_USERS = [
-  { phone: '+233241111111', role: 'admin',  name: 'Ama Administrator', address: 'Obuasi Central', email: 'admin@obuasigo.app' },
-  { phone: '+233242222222', role: 'vendor', name: 'Obuasi Kitchen',    address: 'Market Road, Obuasi', email: 'vendor@obuasigo.app', business_name: 'Obuasi Kitchen Ltd', business_license: 'BL-VEND-2024-118', ghana_card: 'GHA-234567890-1' },
-  { phone: '+233243333333', role: 'hotel',  name: 'Obuasi Royal Hotel', address: 'Hospital Road, Obuasi', email: 'hotel@obuasigo.app', business_name: 'Obuasi Royal Ltd', business_license: 'BL-HOT-2023-044', ghana_card: 'GHA-111222333-4' },
-  { phone: '+233244444444', role: 'rider',  name: 'Kwame Mensah',      address: 'Ahinsan Estate, Obuasi', email: 'rider@obuasigo.app', ghana_card: 'GHA-555666777-8', driver_license: 'DL-GH-2019-5521', vehicle_reg: 'AS-4821-22', vehicle_license: 'VL-2025-0021' },
-  { phone: '+233245555555', role: 'customer', name: 'Dennis Agambila', address: 'New Edubiase Rd, Obuasi', email: 'dennis@example.com' }
-];
-
-function initDb() {
-  if (!pool) {
-    console.warn('No DATABASE_URL - memory mode.');
-    return Promise.resolve();
-  }
-  var sql =
-    "create extension if not exists pgcrypto;" +
-    "create table if not exists users (id uuid primary key default gen_random_uuid(), phone text unique not null, email text, full_name text, role text default 'customer', verified boolean default false, status text default 'active', address text, business_name text, business_license text, vehicle_reg text, vehicle_license text, ghana_card text, driver_license text, last_login timestamptz, created_at timestamptz default now(), updated_at timestamptz default now());" +
-    "create table if not exists orders (id text primary key, customer_phone text not null, customer_name text, vendor text not null, items jsonb default '[]', subtotal numeric default 0, delivery_fee numeric default 8, total numeric default 0, currency text default 'GHS', status text default 'Order created', rider_phone text, pickup_code text, delivery_pin text, pickup_token text, pickup_scanned_at timestamptz, vendor_accepted_at timestamptz, rider_accepted_at timestamptz, rider_commission numeric default 15, delivery_address jsonb, note text, created_at timestamptz default now(), updated_at timestamptz default now());" +
-    "create table if not exists bookings (id text primary key, customer_phone text not null, customer_name text, hotel text not null, room text not null, check_in date, check_out date, nights int default 1, guests int default 1, total numeric default 0, currency text default 'GHS', status text default 'BOOKED', checkin_code text not null, checked_in_at timestamptz, checked_in_by text, created_at timestamptz default now(), updated_at timestamptz default now());" +
-    "create table if not exists rider_earnings (id bigserial primary key, rider_phone text not null, order_id text not null, amount numeric default 0, day date default current_date, created_at timestamptz default now());" +
-    "create table if not exists audit_logs (id bigserial primary key, actor text, action text, entity_type text, entity_id text, meta jsonb, created_at timestamptz default now());" +
-    "create index if not exists orders_customer_idx on orders(customer_phone, created_at desc);" +
-    "create index if not exists orders_rider_idx on orders(rider_phone, updated_at desc);" +
-    "create index if not exists bookings_hotel_idx on bookings(hotel, created_at desc);" +
-    "create index if not exists earnings_rider_day_idx on rider_earnings(rider_phone, day);";
-
-  var alter =
-    "alter table users add column if not exists address text;" +
-    "alter table users add column if not exists business_name text;" +
-    "alter table users add column if not exists business_license text;" +
-    "alter table users add column if not exists vehicle_reg text;" +
-    "alter table users add column if not exists vehicle_license text;" +
-    "alter table users add column if not exists ghana_card text;" +
-    "alter table users add column if not exists driver_license text;" +
-    "alter table users add column if not exists last_login timestamptz;";
-
-  return pool.query(sql)
-    .then(function(){ return pool.query(alter); })
-    .then(function(){
-      var ops = DEMO_USERS.map(function(u){
-        return pool.query(
-          "insert into users(phone, role, verified, full_name, email, address, business_name, business_license, ghana_card, driver_license, vehicle_reg, vehicle_license) " +
-          "values($1,$2,true,$3,$4,$5,$6,$7,$8,$9,$10,$11) " +
-          "on conflict(phone) do update set role=$2, verified=true, " +
-          "full_name=coalesce(users.full_name,$3), email=coalesce(users.email,$4), " +
-          "address=coalesce(users.address,$5), business_name=coalesce(users.business_name,$6), " +
-          "business_license=coalesce(users.business_license,$7), ghana_card=coalesce(users.ghana_card,$8), " +
-          "driver_license=coalesce(users.driver_license,$9), vehicle_reg=coalesce(users.vehicle_reg,$10), " +
-          "vehicle_license=coalesce(users.vehicle_license,$11)",
-          [u.phone, u.role, u.name, u.email, u.address || null, u.business_name || null,
-           u.business_license || null, u.ghana_card || null, u.driver_license || null,
-           u.vehicle_reg || null, u.vehicle_license || null]
-        );
-      });
-      return Promise.all(ops).then(function(){ console.log('Seeded ' + DEMO_USERS.length + ' demo users'); });
-    })
-    .catch(function(e){ console.warn('DB init warning:', e.message); });
+function referralCodeFor(phone){return 'OBG-'+crypto.createHash('sha256').update(String(phone)+'|OBUASIGO-REFERRAL').digest('hex').slice(0,8).toUpperCase()}
+async function ensureReferralCode(phone){
+ const code=referralCodeFor(phone);
+ if(pool) await q('insert into referral_codes(code,phone) values($1,$2) on conflict(phone) do nothing',[code,phone]);
+ else memory.referralCodes.set(phone,code);
+ return code;
 }
-
-var mem = { users: new Map(), orders: new Map(), bookings: new Map(), earnings: [], audit: [] };
-
-function normalizePhone(p) { return String(p || '').replace(/[\s()\-]/g, ''); }
-function validE164(p) { return /^\+[1-9]\d{7,14}$/.test(p); }
-
-var twilioOk = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_VERIFY_SERVICE_SID);
-var twilioClient = twilioOk ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN) : null;
-
-function sendOtp(phone) {
-  if (twilioOk) return twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verifications.create({ to: phone, channel: 'sms' }).then(function(v){ return { provider: 'twilio' }; });
-  if (process.env.DEV_OTP === 'true') {
-    global.devOtps = global.devOtps || new Map();
-    var code = String(Math.floor(100000 + Math.random() * 900000));
-    global.devOtps.set(phone, { code: code, expires: Date.now() + 300000 });
-    console.log('[DEV OTP]', phone, code);
-    return Promise.resolve({ provider: 'development', devOtp: code });
-  }
-  var err = new Error('OTP service not configured');
-  err.statusCode = 503;
-  return Promise.reject(err);
+async function getReferralStats(phone){
+ const code=await ensureReferralCode(phone);
+ if(pool){
+  const counts=(await q(`select count(*)::int as total, count(*) filter(where status='qualified')::int as qualified from referrals where inviter_phone=$1`,[phone]))[0];
+  return {code,total:counts?.total||0,qualified:counts?.qualified||0};
+ }
+ const rows=[...memory.referrals.values()].filter(x=>x.inviter_phone===phone);
+ return {code,total:rows.length,qualified:rows.filter(x=>x.status==='qualified').length};
 }
-
-function verifyOtp(phone, code) {
-  if (twilioOk) return twilioClient.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID).verificationChecks.create({ to: phone, code: code }).then(function(r){ return { status: r.status }; });
-  var rec = global.devOtps ? global.devOtps.get(phone) : null;
-  if (!rec || Date.now() > rec.expires) return Promise.resolve({ status: 'canceled' });
-  global.devOtps.delete(phone);
-  return Promise.resolve({ status: rec.code === code ? 'approved' : 'pending' });
+async function attachReferral(inviteePhone,code){
+ const c=String(code||'').trim().toUpperCase(); if(!/^OBG-[A-F0-9]{8}$/.test(c)) return false;
+ if(pool){
+  const found=(await q('select phone from referral_codes where code=$1',[c]))[0];
+  if(!found||found.phone===inviteePhone)return false;
+  const exists=(await q('select id from referrals where invitee_phone=$1',[inviteePhone]))[0];
+  if(exists)return false;
+  await q("insert into referrals(inviter_phone,invitee_phone,referral_code,status) values($1,$2,$3,'joined') on conflict(invitee_phone) do nothing",[found.phone,inviteePhone,c]);
+  await audit(inviteePhone,'referral.joined','referral',inviteePhone,{inviter:found.phone});
+  return true;
+ }
+ const found=[...memory.referralCodes.entries()].find(([phone,v])=>v===c&&phone!==inviteePhone)?.[0];
+ if(!found||memory.referrals.has(inviteePhone))return false;
+ memory.referrals.set(inviteePhone,{inviter_phone:found,invitee_phone:inviteePhone,referral_code:c,status:'joined',created_at:new Date().toISOString()});
+ return true;
 }
-
-function configuredRole(phone) {
-  var admins = (process.env.ADMIN_PHONES || '').split(',').map(normalizePhone).filter(Boolean);
-  return admins.indexOf(phone) !== -1 ? 'admin' : 'customer';
+async function qualifyReferralForUser(phone){
+ if(pool) await q("update referrals set status='qualified',qualified_at=now() where invitee_phone=$1 and status='joined'",[phone]);
+ else {const r=memory.referrals.get(phone);if(r&&r.status==='joined'){r.status='qualified';r.qualified_at=new Date().toISOString()}}
 }
+async function upsertUser(phone,referralCode){const role=configuredRole(phone);let existed=!!(await getUser(phone));let user;if(pool){const r=await q(`insert into users(phone,role,verified) values($1,$2,true) on conflict(phone) do update set verified=true,role=case when $2='admin' then 'admin' else users.role end returning *`,[phone,role]);user=r[0]}else{let u=memory.users.get(phone)||{phone,role,verified:true,createdAt:new Date().toISOString()};u.verified=true;if(role==='admin')u.role='admin';memory.users.set(phone,u);user=u}await ensureReferralCode(phone);if(!existed&&referralCode&&user.role==='customer')await attachReferral(phone,referralCode);return user}
+function auth(req,res,next){try{req.user=jwt.verify((req.headers.authorization||'').replace(/^Bearer\s+/,'').trim(),SIGNING_SECRET);next()}catch{return res.status(401).json({error:'Authentication required'})}}
+function admin(req,res,next){if(!['admin','superadmin'].includes(req.user.role))return res.status(403).json({error:'Admin access required'});next()}
+function roles(...allowed){return (req,res,next)=>allowed.includes(req.user.role)?next():res.status(403).json({error:'Insufficient permissions'})}
+async function audit(actor,action,type,id,meta={}){if(pool)await q('insert into audit_logs(actor,action,entity_type,entity_id,meta) values($1,$2,$3,$4,$5)',[actor,action,type,id,JSON.stringify(meta)]);else memory.audit.push({actor,action,type,id,meta,at:new Date().toISOString()})}
+app.get('/api/health',async(req,res)=>res.json({ok:true,service:'ObuasiGo API',database:pool?'postgres':'memory-dev',otpProvider:twilioConfigured?'twilio-verify':process.env.DEV_OTP==='true'?'development':'not-configured',payments:process.env.FLW_SECRET_KEY?'flutterwave':'not-configured',maps:'browser-geolocation+leaflet',push:process.env.VAPID_PUBLIC_KEY?'web-push':'not-configured',time:new Date().toISOString()}));
+app.post('/api/auth/request-otp',authLimiter,async(req,res)=>{const phone=normalizePhone(req.body.phone);if(!validE164(phone))return res.status(400).json({error:'Use international format, e.g. +233241234567'});try{const r=await sendOtp(phone);res.json({ok:true,message:'OTP sent',provider:r.provider,...(r.devOtp?{devOtp:r.devOtp}:{})})}catch(e){res.status(e.statusCode||502).json({error:'Could not send OTP'})}});
+app.post('/api/auth/verify-otp',authLimiter,async(req,res)=>{const phone=normalizePhone(req.body.phone),code=String(req.body.code||'').trim(),referralCode=String(req.body.referralCode||'').trim();if(!validE164(phone)||!/^[0-9]{4,10}$/.test(code))return res.status(400).json({error:'Invalid phone or OTP'});try{const c=await verifyOtp(phone,code);if(c.status!=='approved')return res.status(400).json({error:'Incorrect or expired OTP'});const user=await upsertUser(phone,referralCode);const token=jwt.sign({phone:user.phone,role:user.role||'customer',verified:true},SIGNING_SECRET,{expiresIn:'7d'});res.json({ok:true,token,user})}catch(e){res.status(502).json({error:'Could not verify OTP'})}});
+app.get('/api/me',auth,async(req,res)=>{const u=await getUser(req.user.phone)||req.user;let profile=null;if(u.role==='vendor')profile=await getRoleProfile(req.user.phone,'vendor');if(u.role==='hotel')profile=await getRoleProfile(req.user.phone,'hotel');if(u.role==='rider'&&pool)profile=(await q('select * from rider_profiles where phone=$1',[req.user.phone]))[0]||null;res.json({user:u,profile})});
+app.post('/api/auth/refresh',auth,async(req,res)=>{const user=await getUser(req.user.phone);if(!user)return res.status(404).json({error:'User not found'});const token=jwt.sign({phone:user.phone,role:user.role||'customer',verified:!!user.verified},SIGNING_SECRET,{expiresIn:'7d'});res.json({ok:true,token,user})});
+function makeId(p){return p+Math.floor(10000+Math.random()*90000)}
+app.get('/api/referrals/me',auth,async(req,res)=>{if(req.user.role!=='customer')return res.status(403).json({error:'Referral program is available to customer accounts'});const stats=await getReferralStats(req.user.phone);const base=process.env.APP_URL||`${req.protocol}://${req.get('host')}`;const link=`${base.replace(/\/$/,'')}/?ref=${encodeURIComponent(stats.code)}`;const qrData=await QRCode.toDataURL(link,{width:420,margin:2});res.json({ok:true,...stats,link,qrData,message:'Join me on ObuasiGo — food, hotels and delivery in one app.'})});
+app.post('/api/referrals/claim',auth,async(req,res)=>{if(req.user.role!=='customer')return res.status(403).json({error:'Referral program is available to customer accounts'});const ok=await attachReferral(req.user.phone,req.body.referralCode);res.json({ok,claimed:ok,message:ok?'Referral linked successfully':'Referral code is invalid, already used, or belongs to this account'});});
+app.post('/api/orders',auth,roles('customer'),async(req,res)=>{const id=makeId('OBU-'),lat=Number(req.body.delivery_lat),lng=Number(req.body.delivery_lng),o={id,customer_phone:req.user.phone,vendor:req.body.vendor||'Obuasi Kitchen',items:req.body.items||[],total:Number(req.body.total||0),status:'PAYMENT PENDING',created_at:new Date().toISOString(),pickup_code:'4821',delivery_pin:'7392',delivery_lat:Number.isFinite(lat)?lat:null,delivery_lng:Number.isFinite(lng)?lng:null,delivery_address:String(req.body.delivery_address||'').slice(0,240)};if(pool){await q('insert into orders(id,customer_phone,vendor,items,total,status,pickup_code,delivery_pin,delivery_lat,delivery_lng,delivery_address) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',[o.id,o.customer_phone,o.vendor,JSON.stringify(o.items),o.total,o.status,o.pickup_code,o.delivery_pin,o.delivery_lat,o.delivery_lng,o.delivery_address]);}else memory.orders.set(id,o);await audit(req.user.phone,'order.created','order',id,{total:o.total});res.status(201).json(o)});
+app.get('/api/orders',auth,async(req,res)=>{if(pool)return res.json(await q('select * from orders where customer_phone=$1 order by created_at desc',[req.user.phone]));res.json([...memory.orders.values()].filter(x=>x.customer_phone===req.user.phone))});
+app.patch('/api/orders/:id/status',auth,async(req,res)=>{const s=String(req.body.status||'').slice(0,40);const allowed=['PAYMENT PENDING','Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready','Rider assigned','Rider accepted','Rider arrived','Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'];if(!allowed.includes(s))return res.status(400).json({error:'Invalid order status'});if(pool){const existing=(await q('select * from orders where id=$1',[req.params.id]))[0];if(!existing)return res.status(404).json({error:'Order not found'});const canCustomer=existing.customer_phone===req.user.phone;const canRider=existing.rider_phone===req.user.phone&&['rider'].includes(req.user.role);const canOps=['vendor','admin','superadmin'].includes(req.user.role);if(!canCustomer&&!canRider&&!canOps)return res.status(403).json({error:'Not allowed to update this order'});const r=await q('update orders set status=$1,updated_at=now(),rider_phone=coalesce($2,rider_phone) where id=$3 returning *',[s,canRider?req.user.phone:req.body.riderPhone||null,req.params.id]);await audit(req.user.phone,'order.status','order',req.params.id,{status:s});return res.json(r[0])}const o=memory.orders.get(req.params.id);if(!o)return res.status(404).json({error:'Order not found'});if(o.customer_phone!==req.user.phone&&!['vendor','rider','admin','superadmin'].includes(req.user.role))return res.status(403).json({error:'Not allowed'});o.status=s;o.updated_at=new Date().toISOString();if(req.user.role==='rider')o.rider_phone=req.user.phone;res.json(o)});
+app.post('/api/bookings',auth,async(req,res)=>{const id=makeId('OBU-HL-'),b={id,customer_phone:req.user.phone,hotel:req.body.hotel||'Obuasi Royal Hotel',room:req.body.room||'Executive Room',total:Number(req.body.total||450),status:'BOOKED',created_at:new Date().toISOString()};if(pool)await q('insert into bookings(id,customer_phone,hotel,room,total,status) values($1,$2,$3,$4,$5,$6)',[id,b.customer_phone,b.hotel,b.room,b.total,b.status]);else memory.bookings.set(id,b);await audit(req.user.phone,'booking.created','booking',id);res.status(201).json(b)});
+app.get('/api/bookings',auth,async(req,res)=>{if(pool)return res.json(await q('select * from bookings where customer_phone=$1 order by created_at desc',[req.user.phone]));res.json([...memory.bookings.values()].filter(x=>x.customer_phone===req.user.phone))});
+app.patch('/api/bookings/:id/status',auth,async(req,res)=>{const s=String(req.body.status||'').slice(0,40);if(!['BOOKED','CHECKED IN','CHECKED OUT','CANCELLED'].includes(s))return res.status(400).json({error:'Invalid booking status'});if(pool){const existing=(await q('select * from bookings where id=$1',[req.params.id]))[0];if(!existing)return res.status(404).json({error:'Booking not found'});if(existing.customer_phone!==req.user.phone&&!['hotel','admin','superadmin'].includes(req.user.role))return res.status(403).json({error:'Not allowed'});const r=await q('update bookings set status=$1,updated_at=now() where id=$2 returning *',[s,req.params.id]);await audit(req.user.phone,'booking.status','booking',req.params.id,{status:s});return res.json(r[0])}const b=memory.bookings.get(req.params.id);if(!b)return res.status(404).json({error:'Booking not found'});if(b.customer_phone!==req.user.phone&&!['hotel','admin','superadmin'].includes(req.user.role))return res.status(403).json({error:'Not allowed'});b.status=s;res.json(b)});
+app.get('/api/bookings/:id/qr',auth,async(req,res)=>{const booking=pool?(await q('select id,customer_phone,hotel,room,status,created_at from bookings where id=$1',[req.params.id]))[0]:memory.bookings.get(req.params.id);if(!booking)return res.status(404).json({error:'Booking not found'});if(booking.customer_phone!==req.user.phone&&!['hotel','admin','superadmin'].includes(req.user.role))return res.status(403).json({error:'Not allowed'});const token=jwt.sign({bookingId:booking.id,hotel:booking.hotel,customer:booking.customer_phone,nonce:crypto.randomBytes(8).toString('hex')},SIGNING_SECRET,{expiresIn:'30m'});const qrData=await QRCode.toDataURL(token,{width:440,margin:2});res.json({bookingId:booking.id,qrToken:token,qrData,expiresIn:1800})});
+app.post('/api/hotel/checkin/scan',auth,roles('hotel','admin','superadmin'),async(req,res)=>{try{const c=jwt.verify(String(req.body.qrToken||''),SIGNING_SECRET);const b=pool?(await q('select * from bookings where id=$1',[c.bookingId]))[0]:memory.bookings.get(c.bookingId);if(!b)return res.status(404).json({error:'Booking not found'});if(req.user.role==='hotel'&&(req.user.hotel||'Obuasi Royal Hotel')!==b.hotel)return res.status(403).json({error:'Booking belongs to another hotel'});if(b.status!=='BOOKED')return res.status(400).json({error:'Booking is not available for check-in'});if(pool){const r=await q("update bookings set status='CHECKED IN',updated_at=now() where id=$1 returning *",[b.id]);await audit(req.user.phone,'hotel.checkin','booking',b.id);return res.json({ok:true,booking:r[0]})}b.status='CHECKED IN';res.json({ok:true,booking:b})}catch{return res.status(400).json({error:'Invalid or expired QR code'})}});
+async function flw(pathname,body){const r=await fetch('https://api.flutterwave.com/v3'+pathname,{method:'POST',headers:{Authorization:'Bearer '+process.env.FLW_SECRET_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.message||'Flutterwave error');return d}
+app.post('/api/payments/checkout',auth,async(req,res)=>{if(!process.env.FLW_SECRET_KEY)return res.status(503).json({error:'Flutterwave is not configured'});const amount=Number(req.body.amount);if(!(amount>0))return res.status(400).json({error:'Invalid amount'});const tx_ref='OBG-'+Date.now()+'-'+crypto.randomBytes(3).toString('hex');const base=process.env.APP_URL||`${req.protocol}://${req.get('host')}`;try{const d=await flw('/payments',{tx_ref,amount,currency:'GHS',redirect_url:`${base}/payment-return`,customer:{email:req.body.email||`${req.user.phone.replace('+','')}@obuasigo.app`,name:req.body.name||'ObuasiGo Customer',phonenumber:req.user.phone},payment_options:'card,ghanamobilemoney',customizations:{title:'ObuasiGo',description:req.body.description||'ObuasiGo order payment'},meta:{entity_type:req.body.entityType||'order',entity_id:req.body.entityId||''}});if(pool)await q('insert into payments(tx_ref,user_phone,entity_type,entity_id,amount,currency,status) values($1,$2,$3,$4,$5,$6,$7)',[tx_ref,req.user.phone,req.body.entityType||'order',req.body.entityId||'',amount,'GHS','pending']);else memory.payments.set(tx_ref,{tx_ref,user_phone:req.user.phone,amount,status:'pending'});res.json({ok:true,tx_ref,link:d.data?.link})}catch(e){res.status(502).json({error:e.message})}});
+app.get('/api/payments/verify/:transactionId',auth,async(req,res)=>{if(!process.env.FLW_SECRET_KEY)return res.status(503).json({error:'Flutterwave is not configured'});try{const r=await fetch(`https://api.flutterwave.com/v3/transactions/${encodeURIComponent(req.params.transactionId)}/verify`,{headers:{Authorization:'Bearer '+process.env.FLW_SECRET_KEY}});const d=await r.json();res.status(r.ok?200:502).json(d)}catch(e){res.status(502).json({error:e.message})}});
+app.post('/api/webhooks/flutterwave',async(req,res)=>{const hash=req.headers['verif-hash'];if(!process.env.FLW_SECRET_HASH||hash!==process.env.FLW_SECRET_HASH)return res.status(401).end();const body=req.body||{};const tx=body.data||body;const ref=tx.tx_ref;if(ref){if(pool){await q('update payments set status=$1,transaction_id=$2 where tx_ref=$3',[tx.status||'completed',String(tx.id||''),ref]);const pay=(await q('select entity_type,entity_id,status from payments where tx_ref=$1',[ref]))[0];if(pay?.entity_type==='order'&&pay.entity_id&&String(tx.status||'').toLowerCase()==='successful'){await q("update orders set status='Payment confirmed',updated_at=now() where id=$1",[pay.entity_id]);const order=(await q('select customer_phone from orders where id=$1',[pay.entity_id]))[0];if(order?.customer_phone)await qualifyReferralForUser(order.customer_phone)}}else if(memory.payments.has(ref)){const pay=memory.payments.get(ref);pay.status=tx.status||'completed';if(pay.entity_type==='order'&&pay.entity_id&&String(tx.status||'').toLowerCase()==='successful'){const o=memory.orders.get(pay.entity_id);if(o){o.status='Payment confirmed';await qualifyReferralForUser(o.customer_phone)}}}}res.json({ok:true})});
+app.get('/api/rider/dashboard',auth,roles('rider'),async(req,res)=>{let orders=pool?await q('select * from orders where rider_phone=$1 order by updated_at desc limit 50',[req.user.phone]):[...memory.orders.values()].filter(x=>x.rider_phone===req.user.phone);let feedback=pool?await q('select * from order_feedback where rider_phone=$1 order by created_at desc limit 20',[req.user.phone]):[...memory.feedback.values()].filter(x=>x.rider_phone===req.user.phone);const earnings=orders.filter(x=>['Delivered','COMPLETED','Delivered to customer'].includes(x.status)).map(x=>Number(x.total||0)*0.15);res.json({orders,feedback,earnings,summary:{today:earnings.slice(-7).reduce((a,b)=>a+b,0),deliveries:orders.length,averageRating:feedback.length?feedback.reduce((a,b)=>a+b.rating,0)/feedback.length:0}})});
+app.get('/api/search',async(req,res)=>{try{const data=await searchCatalog(req.query.q||'',req.query.type||'all');res.json({ok:true,results:data})}catch(e){res.status(500).json({error:'Search failed'})}});
 
-function getUser(phone) {
-  if (pool) return q('select * from users where phone=$1', [phone]).then(function(r){ return r[0]; });
-  return Promise.resolve(mem.users.get(phone));
-}
-
-function upsertUser(phone) {
-  var role = configuredRole(phone);
-  if (pool) {
-    return q("insert into users(phone,role,verified,last_login) values($1,$2,true,now()) on conflict(phone) do update set verified=true, last_login=now(), role=case when $2='admin' then 'admin' else users.role end returning *", [phone, role])
-      .then(function(r){ return r[0]; });
-  }
-  var u = mem.users.get(phone) || { phone: phone, role: role, verified: true };
-  u.verified = true;
-  mem.users.set(phone, u);
-  return Promise.resolve(u);
-}
-
-function auth(req, res, next) {
-  try {
-    var tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-    req.user = jwt.verify(tok, SIGNING_SECRET);
-    next();
-  } catch (e) { return res.status(401).json({ error: 'Authentication required' }); }
-}
-function roles() {
-  var allowed = Array.prototype.slice.call(arguments);
-  return function(req, res, next) {
-    if (allowed.indexOf(req.user.role) !== -1) return next();
-    return res.status(403).json({ error: 'Insufficient permissions' });
-  };
-}
-var adminOnly = roles('admin', 'superadmin');
-
-function audit(a, act, t, id, meta) {
-  if (pool) return q('insert into audit_logs(actor,action,entity_type,entity_id,meta) values($1,$2,$3,$4,$5)', [a, act, t, id, JSON.stringify(meta || {})]).catch(function(){});
-  return Promise.resolve();
-}
-
-// =============== ROUTES ===============
-
-app.get('/api/health', function(req, res){
-  res.json({ ok: true, database: pool ? 'postgres' : 'memory', time: new Date().toISOString() });
-});
-
-// Force seed endpoint
-app.post('/api/dev/seed-roles', function(req, res){
-  if (!pool) return res.json({ ok: true, memory: true });
-  var ops = DEMO_USERS.map(function(u){
-    return q("insert into users(phone, role, verified, full_name, email, address, business_name, business_license, ghana_card, driver_license, vehicle_reg, vehicle_license) " +
-      "values($1,$2,true,$3,$4,$5,$6,$7,$8,$9,$10,$11) " +
-      "on conflict(phone) do update set role=$2, verified=true, full_name=coalesce(users.full_name,$3), email=coalesce(users.email,$4), address=coalesce(users.address,$5), business_name=coalesce(users.business_name,$6), business_license=coalesce(users.business_license,$7), ghana_card=coalesce(users.ghana_card,$8), driver_license=coalesce(users.driver_license,$9), vehicle_reg=coalesce(users.vehicle_reg,$10), vehicle_license=coalesce(users.vehicle_license,$11)",
-      [u.phone, u.role, u.name, u.email, u.address || null, u.business_name || null, u.business_license || null, u.ghana_card || null, u.driver_license || null, u.vehicle_reg || null, u.vehicle_license || null]);
-  });
-  Promise.all(ops).then(function(){ res.json({ ok: true, seeded: DEMO_USERS.length }); })
-    .catch(function(e){ res.status(500).json({ error: e.message }); });
-});
-
-app.post('/api/auth/request-otp', authLimiter, function(req, res){
-  var phone = normalizePhone(req.body.phone);
-  if (!validE164(phone)) return res.status(400).json({ error: 'Use +233241234567' });
-  sendOtp(phone).then(function(r){
-    var out = { ok: true, provider: r.provider };
-    if (r.devOtp) out.devOtp = r.devOtp;
-    res.json(out);
-  }).catch(function(e){ res.status(e.statusCode || 502).json({ error: 'Could not send OTP' }); });
-});
-
-app.post('/api/auth/verify-otp', authLimiter, function(req, res){
-  var phone = normalizePhone(req.body.phone);
-  var code = String(req.body.code || '').trim();
-  if (!validE164(phone) || !/^[0-9]{4,10}$/.test(code)) return res.status(400).json({ error: 'Invalid phone or OTP' });
-  verifyOtp(phone, code).then(function(c){
-    if (c.status !== 'approved') return res.status(400).json({ error: 'Incorrect or expired OTP' });
-    return upsertUser(phone).then(function(user){
-      var token = jwt.sign({ phone: user.phone, role: user.role || 'customer', verified: true }, SIGNING_SECRET, { expiresIn: '7d' });
-      res.json({ ok: true, token: token, user: user });
-    });
-  }).catch(function(){ res.status(502).json({ error: 'Could not verify' }); });
-});
-
-app.get('/api/me', auth, function(req, res){
-  getUser(req.user.phone).then(function(u){ res.json({ user: u || req.user }); });
-});
-
-app.patch('/api/me', auth, function(req, res){
-  var fields = req.body || {};
-  var cols = ['full_name','email','address','business_name','business_license','vehicle_reg','vehicle_license','ghana_card','driver_license'];
-  var sets = [];
-  var params = [];
-  var i = 1;
-  cols.forEach(function(c){
-    if (fields[c] !== undefined){ sets.push(c + '=$' + i); params.push(fields[c]); i++; }
-  });
-  if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
-  params.push(req.user.phone);
-  var sql = 'update users set ' + sets.join(',') + ', updated_at=now() where phone=$' + i + ' returning *';
-  if (pool) { q(sql, params).then(function(r){ res.json({ user: r[0] }); }); return; }
-  res.json({ ok: true });
-});
-
-// =============== ADMIN ===============
-
-app.get('/api/admin/users', auth, adminOnly, function(req, res){
-  if (pool) {
-    q('select * from users order by created_at desc').then(function(rows){
-      var grouped = { customers: [], vendors: [], hotels: [], riders: [], admins: [] };
-      rows.forEach(function(u){
-        if (u.role === 'customer') grouped.customers.push(u);
-        else if (u.role === 'vendor') grouped.vendors.push(u);
-        else if (u.role === 'hotel') grouped.hotels.push(u);
-        else if (u.role === 'rider') grouped.riders.push(u);
-        else grouped.admins.push(u);
-      });
-      res.json({ all: rows, grouped: grouped });
-    });
-    return;
-  }
-  var users = [];
-  mem.users.forEach(function(u){ users.push(u); });
-  res.json({ all: users, grouped: { customers: users, vendors: [], hotels: [], riders: [], admins: [] } });
-});
-
-app.patch('/api/admin/users/:phone', auth, adminOnly, function(req, res){
-  var fields = req.body || {};
-  var cols = ['full_name','email','role','address','business_name','business_license','vehicle_reg','vehicle_license','ghana_card','driver_license'];
-  var sets = [];
-  var params = [];
-  var i = 1;
-  cols.forEach(function(c){
-    if (fields[c] !== undefined){ sets.push(c + '=$' + i); params.push(fields[c]); i++; }
-  });
-  if (!sets.length) return res.status(400).json({ error: 'Nothing to update' });
-  params.push(req.params.phone);
-  var sql = 'update users set ' + sets.join(',') + ', updated_at=now() where phone=$' + i + ' returning *';
-  if (pool) { q(sql, params).then(function(r){ res.json({ user: r[0] }); }); return; }
-  res.json({ ok: true });
-});
-
-app.get('/api/admin/user-stats/:phone', auth, adminOnly, function(req, res){
-  var phone = req.params.phone;
-  if (pool) {
-    Promise.all([
-      q('select count(*) n, coalesce(sum(total),0) s from orders where customer_phone=$1', [phone]),
-      q('select count(*) n from orders where rider_phone=$1', [phone]),
-      q('select coalesce(sum(amount),0) n from rider_earnings where rider_phone=$1', [phone]),
-      q('select count(*) n from bookings where customer_phone=$1', [phone]),
-      q('select count(*) n from orders where vendor=(select coalesce(business_name,full_name,phone) from users where phone=$1)', [phone])
-    ]).then(function(r){
-      res.json({
-        customerOrders: Number(r[0][0].n), customerSpend: Number(r[0][0].s),
-        riderDeliveries: Number(r[1][0].n), riderEarnings: Number(r[2][0].n),
-        bookings: Number(r[3][0].n), vendorOrders: Number(r[4][0].n)
-      });
-    });
-    return;
-  }
-  res.json({ customerOrders: 0, customerSpend: 0, riderDeliveries: 0, riderEarnings: 0, bookings: 0, vendorOrders: 0 });
-});
-
-app.get('/api/portal/overview', auth, adminOnly, function(req, res){
-  if (pool) {
-    Promise.all([
-      q("select count(*) n from users where role='customer'"),
-      q("select count(*) n from users where role='rider'"),
-      q("select count(*) n from users where role='vendor'"),
-      q("select count(*) n from users where role='hotel'"),
-      q('select count(*) n from orders'),
-      q('select count(*) n from bookings'),
-      q("select count(*) n from bookings where status='CHECKED IN'"),
-      q("select coalesce(sum(total),0) n from orders where status='Completed'"),
-      q("select coalesce(sum(total),0) n from orders where status not in ('Order created','Cancelled by customer','Rejected by vendor')")
-    ]).then(function(r){
-      res.json({
-        customers: Number(r[0][0].n), riders: Number(r[1][0].n),
-        vendors: Number(r[2][0].n), hotels: Number(r[3][0].n),
-        orders: Number(r[4][0].n), bookings: Number(r[5][0].n),
-        checkedIn: Number(r[6][0].n), revenue: Number(r[7][0].n),
-        confirmedRevenue: Number(r[8][0].n)
-      });
-    });
-    return;
-  }
-  res.json({ customers: 0, riders: 0, vendors: 0, hotels: 0, orders: 0, bookings: 0, checkedIn: 0, revenue: 0, confirmedRevenue: 0 });
-});
-
-// =============== VENDOR ===============
-
-app.get('/api/vendor/orders', auth, roles('vendor','admin','superadmin'), function(req, res){
-  var vendorName = req.query.vendor || 'Obuasi Kitchen';
-  if (pool) {
-    q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName]).then(function(rows){ res.json(rows); });
-    return;
-  }
-  var arr = [];
-  mem.orders.forEach(function(o){ if (o.vendor === vendorName) arr.push(o); });
-  res.json(arr);
-});
-
-// =============== ORDERS ===============
-
-var ORDER_FLOW = ['Order created','Payment confirmed','Restaurant accepted','Preparing','Food ready','Rider assigned','Rider accepted','Rider arrived','Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'];
-
-function makeId(prefix, digits) {
-  var n = digits || 5;
-  var min = Math.pow(10, n - 1);
-  return prefix + Math.floor(min + Math.random() * (Math.pow(10, n) - min));
-}
-
-app.post('/api/orders', auth, function(req, res){
-  var items = Array.isArray(req.body.items) ? req.body.items : [];
-  if (!items.length) return res.status(400).json({ error: 'Cart is empty' });
-  var subtotal = 0;
-  for (var i = 0; i < items.length; i++) subtotal += Number(items[i].price || 0) * Number(items[i].qty || 0);
-  var deliveryFee = Number(req.body.deliveryFee != null ? req.body.deliveryFee : 8);
-  var total = Number(req.body.total != null ? req.body.total : (subtotal + deliveryFee));
-
-  var order = {
-    id: makeId('OBU-'),
-    customer_phone: req.user.phone,
-    customer_name: req.body.customerName || null,
-    vendor: String(req.body.vendor || 'Obuasi Kitchen').slice(0, 80),
-    items: items, subtotal: subtotal, delivery_fee: deliveryFee, total: total,
-    status: 'Order created',
-    pickup_code: String(1000 + Math.floor(Math.random() * 9000)),
-    delivery_pin: String(1000 + Math.floor(Math.random() * 9000)),
-    delivery_address: req.body.deliveryAddress || { text: '' },
-    note: String(req.body.note || '').slice(0, 300)
-  };
-
-  if (pool) {
-    q("insert into orders(id,customer_phone,customer_name,vendor,items,subtotal,delivery_fee,total,status,pickup_code,delivery_pin,delivery_address,note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
-      [order.id, order.customer_phone, order.customer_name, order.vendor, JSON.stringify(items), subtotal, deliveryFee, total, order.status, order.pickup_code, order.delivery_pin, JSON.stringify(order.delivery_address), order.note])
-      .then(function(){ res.status(201).json(order); })
-      .catch(function(e){ res.status(500).json({ error: e.message }); });
-    return;
-  }
-  mem.orders.set(order.id, order);
-  res.status(201).json(order);
-});
-
-app.get('/api/orders', auth, function(req, res){
-  if (pool) { q('select * from orders where customer_phone=$1 order by created_at desc', [req.user.phone]).then(function(rows){ res.json(rows); }); return; }
-  var arr = [];
-  mem.orders.forEach(function(v){ if (v.customer_phone === req.user.phone) arr.push(v); });
-  res.json(arr);
-});
-
-app.post('/api/orders/:id/pay', auth, function(req, res){
-  if (pool) {
-    q("update orders set status='Payment confirmed', updated_at=now() where id=$1 and customer_phone=$2 returning *", [req.params.id, req.user.phone])
-      .then(function(r){ if (!r[0]) return res.status(404).json({ error: 'Not found' }); res.json(r[0]); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Payment confirmed';
-  res.json(o);
-});
-
-app.post('/api/orders/:id/cancel', auth, function(req, res){
-  var getOrder = pool ? q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; }) : Promise.resolve(mem.orders.get(req.params.id));
-  getOrder.then(function(order){
-    if (!order) return res.status(404).json({ error: 'Not found' });
-    if (order.customer_phone !== req.user.phone && ['admin','superadmin'].indexOf(req.user.role) === -1) return res.status(403).json({ error: 'Not allowed' });
-    if (['Food picked up','Going to customer','Arrived at customer','Customer PIN verified','Completed'].indexOf(order.status) !== -1) return res.status(400).json({ error: 'Cannot cancel' });
-    if (pool) { q("update orders set status='Cancelled by customer', updated_at=now() where id=$1 returning *", [order.id]).then(function(r){ res.json(r[0]); }); return; }
-    order.status = 'Cancelled by customer';
-    res.json(order);
-  });
-});
-
-app.post('/api/orders/:id/vendor-accept', auth, roles('vendor','admin','superadmin'), function(req, res){
-  var pickupToken = 'PCK-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-  if (pool) {
-    q("update orders set status='Restaurant accepted', pickup_token=$1, vendor_accepted_at=now(), updated_at=now() where id=$2 returning *", [pickupToken, req.params.id])
-      .then(function(r){ if (!r[0]) return res.status(404).json({ error: 'Not found' }); res.json(r[0]); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Restaurant accepted';
-  o.pickup_token = pickupToken;
-  res.json(o);
-});
-
-app.post('/api/orders/:id/vendor-reject', auth, roles('vendor','admin','superadmin'), function(req, res){
-  var reason = String(req.body.reason || 'Rejected').slice(0, 200);
-  if (pool) {
-    q("update orders set status='Rejected by vendor', note=coalesce(note,'') || ' | Reason: ' || $1, updated_at=now() where id=$2 returning *", [reason, req.params.id])
-      .then(function(r){ if (!r[0]) return res.status(404).json({ error: 'Not found' }); res.json(r[0]); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Rejected by vendor';
-  res.json(o);
-});
-
-app.post('/api/orders/:id/food-ready', auth, roles('vendor','admin','superadmin'), function(req, res){
-  if (pool) { q("update orders set status='Food ready', updated_at=now() where id=$1 returning *", [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); }); return; }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Food ready';
-  res.json(o);
-});
-
-app.get('/api/orders/:id/pickup-qr', auth, roles('vendor','admin','superadmin','rider'), function(req, res){
-  var getOrder = pool ? q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; }) : Promise.resolve(mem.orders.get(req.params.id));
-  getOrder.then(function(order){
-    if (!order) return res.status(404).json({ error: 'Not found' });
-    if (!order.pickup_token) return res.status(400).json({ error: 'Not approved yet' });
-    var token = jwt.sign({ t: 'pickup', id: order.id, code: order.pickup_token }, SIGNING_SECRET);
-    return QRCode.toDataURL(token, { width: 512, margin: 1 }).then(function(png){
-      res.json({ png: png, code: order.pickup_token, orderId: order.id });
-    });
-  }).catch(function(e){ res.status(500).json({ error: e.message }); });
-});
-
-app.post('/api/orders/:id/rider-arrived', auth, roles('rider','admin','superadmin'), function(req, res){
-  if (pool) { q("update orders set status='Rider arrived', rider_phone=$1, updated_at=now() where id=$2 returning *", [req.user.phone, req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); }); return; }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Rider arrived';
-  o.rider_phone = req.user.phone;
-  res.json(o);
-});
-
-app.post('/api/orders/:id/rider-picked-up', auth, roles('rider','admin','superadmin'), function(req, res){
-  if (pool) { q("update orders set status='Food picked up', pickup_scanned_at=now(), updated_at=now() where id=$1 returning *", [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); }); return; }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Food picked up';
-  res.json(o);
-});
-
-app.post('/api/orders/:id/rider-arrived-customer', auth, roles('rider','admin','superadmin'), function(req, res){
-  if (pool) { q("update orders set status='Arrived at customer', updated_at=now() where id=$1 returning *", [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); }); return; }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Arrived at customer';
-  res.json(o);
-});
-
-app.post('/api/orders/:id/verify-delivery', auth, roles('rider','admin','superadmin'), function(req, res){
-  var pin = String(req.body.pin || '').trim();
-  var getOrder = pool ? q('select * from orders where id=$1', [req.params.id]).then(function(r){ return r[0]; }) : Promise.resolve(mem.orders.get(req.params.id));
-  getOrder.then(function(order){
-    if (!order) return res.status(404).json({ error: 'Not found' });
-    if (order.delivery_pin && order.delivery_pin !== pin) return res.status(400).json({ error: 'Wrong PIN' });
-    var commission = Number(order.rider_commission || 15);
-    var owner = order.rider_phone || req.user.phone;
-    if (pool) {
-      return q("update orders set status='Completed', updated_at=now() where id=$1", [order.id])
-        .then(function(){ return q("insert into rider_earnings(rider_phone,order_id,amount,day) values($1,$2,$3,current_date)", [owner, order.id, commission]); })
-        .then(function(){ res.json({ ok: true, commission: commission }); });
+app.post('/api/partner/apply',auth,async(req,res)=>{
+  const requestedRole=cleanText(req.body.requested_role,20).toLowerCase();
+  if(!['rider','vendor','hotel'].includes(requestedRole))return res.status(400).json({error:'Choose rider, vendor or hotel'});
+  const common={full_name:cleanText(req.body.full_name,120),ghana_card_number:cleanText(req.body.ghana_card_number,80),address:cleanText(req.body.address,240),email:cleanText(req.body.email,160)};
+  try{
+    if(pool){
+      if(requestedRole==='rider'){
+        await q(`insert into rider_profiles(phone,full_name,ghana_card_name,ghana_card_number,license_number,vehicle_type,plate_number,address,emergency_phone,metadata) values($1,$2,$2,$3,$4,$5,$6,$7,$8,$9) on conflict(phone) do update set full_name=$2,ghana_card_name=$2,ghana_card_number=$3,license_number=$4,vehicle_type=$5,plate_number=$6,address=$7,emergency_phone=$8,metadata=$9,updated_at=now()`,[req.user.phone,common.full_name,common.ghana_card_number,cleanText(req.body.license_number,80),cleanText(req.body.vehicle_type,40),cleanText(req.body.plate_number,40),common.address,cleanText(req.body.emergency_phone,40),JSON.stringify({email:common.email})]);
+      }else{
+        const existing=(await q('select id from business_profiles where owner_phone=$1 and kind=$2 limit 1',[req.user.phone,requestedRole]))[0];
+        let b;if(existing)b=(await q(`update business_profiles set business_name=$1,business_phone=$2,email=$3,address=$4,description=$5,ghana_card_name=$6,ghana_card_number=$7,registration_number=$8,metadata=$9,status='pending',updated_at=now() where id=$10 returning *`,[cleanText(req.body.business_name,160),cleanText(req.body.business_phone,40),common.email,common.address,cleanText(req.body.description,500),common.full_name,common.ghana_card_number,cleanText(req.body.registration_number,100),JSON.stringify({businessType:cleanText(req.body.business_type,80),hours:cleanText(req.body.hours,120)}),existing.id]))[0];else b=(await q(`insert into business_profiles(owner_phone,kind,business_name,business_phone,email,address,description,ghana_card_name,ghana_card_number,registration_number,metadata) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,[req.user.phone,requestedRole,cleanText(req.body.business_name,160),cleanText(req.body.business_phone,40),common.email,common.address,cleanText(req.body.description,500),common.full_name,common.ghana_card_number,cleanText(req.body.registration_number,100),JSON.stringify({businessType:cleanText(req.body.business_type,80),hours:cleanText(req.body.hours,120)})]))[0];
+        if(Array.isArray(req.body.catalog)){for(const item of req.body.catalog.slice(0,50)){if(!item?.name)continue;await q('insert into catalog_items(business_id,name,category,price,description) values($1,$2,$3,$4,$5)',[b.id,cleanText(item.name,120),cleanText(item.category,60),Math.max(0,Number(item.price||0)),cleanText(item.description,240)])}}
+      }
+      const a=(await q(`insert into role_applications(phone,requested_role,business_name,notes,status) values($1,$2,$3,$4,'pending') returning *`,[req.user.phone,requestedRole,cleanText(req.body.business_name,160),cleanText(req.body.notes,500)]))[0];
+      await audit(req.user.phone,'role.application','role_application',a.id,{requestedRole});return res.status(201).json({ok:true,application:a,message:'Application submitted for admin review'});
     }
-    order.status = 'Completed';
-    mem.earnings.push({ rider_phone: owner, order_id: order.id, amount: commission, day: new Date().toISOString().slice(0,10) });
-    res.json({ ok: true, commission: commission });
-  });
+    const id=crypto.randomUUID();const item={id,phone:req.user.phone,requested_role:requestedRole,business_name:cleanText(req.body.business_name,160),status:'pending',created_at:new Date().toISOString()};memory.applications.set(id,item);
+    if(requestedRole==='rider')memory.riders.set(req.user.phone,{phone:req.user.phone,...common,license_number:cleanText(req.body.license_number,80),vehicle_type:cleanText(req.body.vehicle_type,40),plate_number:cleanText(req.body.plate_number,40),status:'pending'});
+    else memory.businesses.set(id,{id,owner_phone:req.user.phone,kind:requestedRole,business_name:item.business_name,business_phone:cleanText(req.body.business_phone,40),email:common.email,address:common.address,description:cleanText(req.body.description,500),status:'pending'});
+    await audit(req.user.phone,'role.application','role_application',id,{requestedRole});res.status(201).json({ok:true,application:item,message:'Application submitted for admin review'});
+  }catch(e){console.error('partner apply',e);res.status(500).json({error:'Could not submit application'})}
 });
 
-app.post('/api/rider/pickup', auth, roles('rider','admin','superadmin'), function(req, res){
-  var raw = String(req.body.qr || '').trim();
-  var code = String(req.body.code || '').trim().toUpperCase();
-  var decoded = null;
-  if (raw) {
-    try { decoded = jwt.verify(raw, SIGNING_SECRET); }
-    catch (e) { return res.status(400).json({ error: 'Invalid QR' }); }
-    if (decoded.t !== 'pickup') return res.status(400).json({ error: 'Not a pickup code' });
-  }
-  var orderId = decoded ? decoded.id : null;
-  var tok = decoded ? decoded.code : code;
-  if (pool) {
-    var sql, params;
-    if (orderId) { sql = 'select * from orders where id=$1 and pickup_token=$2'; params = [orderId, tok]; }
-    else { sql = 'select * from orders where pickup_token=$1'; params = [tok]; }
-    q(sql, params).then(function(r){
-      var order = r[0];
-      if (!order) return res.status(404).json({ error: 'Not found' });
-      return q("update orders set status='Food picked up', rider_phone=$1, pickup_scanned_at=now(), updated_at=now() where id=$2 returning *", [req.user.phone, order.id]).then(function(up){ res.json({ ok: true, order: up[0] }); });
-    });
-    return;
-  }
-  res.status(400).json({ error: 'no db' });
-});
+app.post('/api/admin/access-request',auth,async(req,res)=>{const fullName=cleanText(req.body.full_name,120),ghana=cleanText(req.body.ghana_card_number,80),reason=cleanText(req.body.reason,500);if(!fullName||!ghana||!reason)return res.status(400).json({error:'Full name, Ghana Card number and reason are required'});if(pool){const r=(await q(`insert into admin_access_requests(phone,full_name,ghana_card_number,reason) values($1,$2,$3,$4) returning id,phone,full_name,status,created_at`,[req.user.phone,fullName,ghana,reason]))[0];await audit(req.user.phone,'admin.access_request','admin_access_request',r.id);return res.status(201).json(r)}const id=crypto.randomUUID(),r={id,phone:req.user.phone,full_name:fullName,ghana_card_number:ghana,reason,status:'pending',created_at:new Date().toISOString()};memory.adminRequests.set(id,r);res.status(201).json(r)});
 
-app.post('/api/rider/online', auth, roles('rider','admin','superadmin'), function(req, res){
-  var code = String(1000 + Math.floor(Math.random() * 9000));
-  global.riderCodes = global.riderCodes || new Map();
-  global.riderCodes.set(req.user.phone, { code: code, expires: Date.now() + 300000 });
-  console.log('[RIDER CODE]', req.user.phone, code);
-  res.json({ ok: true, code: code, dev: true });
-});
+app.get('/api/admin/applications',auth,admin,async(req,res)=>{if(pool)return res.json(await q(`select * from role_applications order by created_at desc limit 200`));res.json([...memory.applications.values()].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))))});
+app.get('/api/admin/access-requests',auth,admin,async(req,res)=>{if(pool)return res.json(await q(`select id,phone,full_name,ghana_card_number,reason,status,created_at,reviewed_at from admin_access_requests order by created_at desc limit 100`));res.json([...memory.adminRequests.values()])});
+app.patch('/api/admin/applications/:id',auth,admin,async(req,res)=>{const status=cleanText(req.body.status,20);if(!['approved','rejected'].includes(status))return res.status(400).json({error:'Invalid application status'});if(pool){const a=(await q('select * from role_applications where id=$1',[req.params.id]))[0];if(!a)return res.status(404).json({error:'Application not found'});await q('update role_applications set status=$1,reviewed_at=now() where id=$2',[status,req.params.id]);if(status==='approved'){await q('update users set role=$1,updated_at=now() where phone=$2',[a.requested_role,a.phone]);if(a.requested_role==='vendor'||a.requested_role==='hotel')await q('update business_profiles set status=\'approved\',updated_at=now() where owner_phone=$1 and kind=$2',[a.phone,a.requested_role]);else await q('update rider_profiles set status=\'approved\',updated_at=now() where phone=$1',[a.phone]);}else{if(a.requested_role==='vendor'||a.requested_role==='hotel')await q('update business_profiles set status=\'rejected\',updated_at=now() where owner_phone=$1 and kind=$2',[a.phone,a.requested_role]);else await q('update rider_profiles set status=\'rejected\',updated_at=now() where phone=$1',[a.phone]);}await audit(req.user.phone,'role.application.review','role_application',a.id,{status});return res.json({ok:true,status})}const a=memory.applications.get(req.params.id);if(!a)return res.status(404).json({error:'Application not found'});a.status=status;if(status==='approved'){const u=memory.users.get(a.phone);if(u)u.role=a.requested_role;if(a.requested_role==='vendor'||a.requested_role==='hotel'){const b=[...memory.businesses.values()].find(x=>x.owner_phone===a.phone&&x.kind===a.requested_role);if(b)b.status='approved'}else{const r=memory.riders.get(a.phone);if(r)r.status='approved'}}res.json({ok:true,status})});
+app.patch('/api/admin/access-requests/:id',auth,admin,async(req,res)=>{const status=cleanText(req.body.status,20);if(!['approved','rejected'].includes(status))return res.status(400).json({error:'Invalid status'});if(pool){const r=(await q('update admin_access_requests set status=$1,reviewed_at=now() where id=$2 returning *',[status,req.params.id]))[0];if(!r)return res.status(404).json({error:'Request not found'});if(status==='approved')await q('update users set role=\'admin\',updated_at=now() where phone=$1',[r.phone]);await audit(req.user.phone,'admin.access_request.review','admin_access_request',req.params.id,{status});return res.json(r)}const r=memory.adminRequests.get(req.params.id);if(!r)return res.status(404).json({error:'Request not found'});r.status=status;if(status==='approved'){const u=memory.users.get(r.phone);if(u)u.role='admin'}res.json(r)});
 
-app.post('/api/rider/verify-online', auth, roles('rider','admin','superadmin'), function(req, res){
-  var code = String(req.body.code || '').trim();
-  var rec = global.riderCodes ? global.riderCodes.get(req.user.phone) : null;
-  if (!rec || Date.now() > rec.expires) return res.status(400).json({ error: 'Code expired' });
-  if (rec.code !== code) return res.status(400).json({ error: 'Wrong code' });
-  global.riderCodes.delete(req.user.phone);
-  res.json({ ok: true });
-});
+app.post('/api/vendor/catalog',auth,roles('vendor'),async(req,res)=>{const p=await getRoleProfile(req.user.phone,'vendor');if(!p||p.status!=='approved')return res.status(403).json({error:'Vendor business is not approved'});const name=cleanText(req.body.name,120),category=cleanText(req.body.category,60),price=Number(req.body.price);if(!name||!(price>=0))return res.status(400).json({error:'Item name and valid price are required'});if(pool){const r=(await q('insert into catalog_items(business_id,name,category,price,description) values($1,$2,$3,$4,$5) returning *',[p.id,name,category,price,cleanText(req.body.description,240)]))[0];return res.status(201).json(r)}const id=crypto.randomUUID(),x={id,business_id:p.id,name,category,price,description:cleanText(req.body.description,240),active:true};memory.catalog.set(id,x);res.status(201).json(x)});
+app.get('/api/vendor/profile',auth,roles('vendor'),async(req,res)=>{const p=await getRoleProfile(req.user.phone,'vendor');if(!p)return res.status(404).json({error:'Vendor profile not found'});if(pool){p.items=await q('select * from catalog_items where business_id=$1 order by created_at desc',[p.id])}else p.items=[...memory.catalog.values()].filter(x=>x.business_id===p.id);res.json(p)});
+app.get('/api/hotel/profile',auth,roles('hotel'),async(req,res)=>{const p=await getRoleProfile(req.user.phone,'hotel');if(!p)return res.status(404).json({error:'Hotel profile not found'});if(pool)p.rooms=await q('select * from catalog_items where business_id=$1 order by created_at desc',[p.id]);else p.rooms=[...memory.catalog.values()].filter(x=>x.business_id===p.id);res.json(p)});
+app.post('/api/hotel/catalog',auth,roles('hotel'),async(req,res)=>{const p=await getRoleProfile(req.user.phone,'hotel');if(!p||p.status!=='approved')return res.status(403).json({error:'Hotel is not approved'});const name=cleanText(req.body.name,120),price=Number(req.body.price);if(!name||!(price>=0))return res.status(400).json({error:'Room name and valid price are required'});if(pool){const r=(await q('insert into catalog_items(business_id,name,category,price,description) values($1,$2,$3,$4,$5) returning *',[p.id,name,'room',price,cleanText(req.body.description,240)]))[0];return res.status(201).json(r)}const id=crypto.randomUUID(),x={id,business_id:p.id,name,category:'room',price,description:cleanText(req.body.description,240),active:true};memory.catalog.set(id,x);res.status(201).json(x)});
 
-app.get('/api/rider/assigned', auth, roles('rider','admin','superadmin'), function(req, res){
-  var phone = req.user.phone;
-  if (pool) {
-    q("select * from orders where (rider_phone=$1 or status in ('Food ready','Restaurant accepted','Rider accepted','Rider arrived')) and status not in ('Completed','Cancelled by customer','Rejected by vendor') order by created_at desc", [phone])
-      .then(function(rows){ res.json(rows); });
-    return;
-  }
-  var arr = [];
-  mem.orders.forEach(function(o){
-    if (['Completed','Cancelled by customer','Rejected by vendor'].indexOf(o.status) !== -1) return;
-    if (o.rider_phone === phone || ['Food ready','Restaurant accepted','Rider accepted','Rider arrived'].indexOf(o.status) !== -1) arr.push(o);
-  });
-  res.json(arr);
-});
-
-app.post('/api/rider/orders/:id/accept', auth, roles('rider','admin','superadmin'), function(req, res){
-  var commission = Number(req.body.commission || 15);
-  if (pool) {
-    q("update orders set rider_phone=$1, rider_accepted_at=now(), rider_commission=$2, status=case when status in ('Food ready','Restaurant accepted') then 'Rider accepted' else status end, updated_at=now() where id=$3 returning *", [req.user.phone, commission, req.params.id])
-      .then(function(r){ if (!r[0]) return res.status(404).json({ error: 'Not found' }); res.json(r[0]); });
-    return;
-  }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.rider_phone = req.user.phone;
-  o.rider_commission = commission;
-  if (['Food ready','Restaurant accepted'].indexOf(o.status) !== -1) o.status = 'Rider accepted';
-  res.json(o);
-});
-
-app.post('/api/rider/orders/:id/reject', auth, roles('rider','admin','superadmin'), function(req, res){
-  if (pool) { q("update orders set status='Restaurant accepted', rider_phone=null, updated_at=now() where id=$1 returning *", [req.params.id]).then(function(r){ res.json(r[0] || { error: 'not found' }); }); return; }
-  var o = mem.orders.get(req.params.id);
-  if (!o) return res.status(404).json({ error: 'Not found' });
-  o.status = 'Restaurant accepted';
-  o.rider_phone = null;
-  res.json(o);
-});
-
-app.get('/api/rider/summary', auth, roles('rider','admin','superadmin'), function(req, res){
-  var phone = req.user.phone;
-  if (pool) {
-    Promise.all([
-      q("select count(*) n from orders where rider_phone=$1 and status <> 'Completed'", [phone]),
-      q("select count(*) n from orders where rider_phone=$1 and status='Completed'", [phone]),
-      q('select coalesce(sum(amount),0) n from rider_earnings where rider_phone=$1', [phone])
-    ]).then(function(r){
-      res.json({ assigned: Number(r[0][0].n), completed: Number(r[1][0].n), earnings: Number(r[2][0].n) });
-    });
-    return;
-  }
-  res.json({ assigned: 0, completed: 0, earnings: 0 });
-});
-
-app.get('/api/rider/earnings', auth, roles('rider','admin','superadmin'), function(req, res){
-  var phone = req.user.role === 'rider' ? req.user.phone : (req.query.rider || req.user.phone);
-  var days = [];
-  for (var i = 6; i >= 0; i--) {
-    var d = new Date();
-    d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
-  }
-  if (pool) {
-    q("select day::text as day, sum(amount)::float as amount, count(*)::int as deliveries from rider_earnings where rider_phone=$1 and day >= current_date - interval '6 days' group by day", [phone])
-      .then(function(rows){
-        var series = days.map(function(day){
-          var r = rows.filter(function(x){ return x.day === day; })[0];
-          return { day: day, amount: r ? Number(r.amount) : 0, deliveries: r ? r.deliveries : 0 };
-        });
-        var total = series.reduce(function(n, s){ return n + s.amount; }, 0);
-        res.json({ series: series, total: total, today: series[series.length-1].amount });
-      });
-    return;
-  }
-  res.json({ series: days.map(function(d){ return { day: d, amount: 0, deliveries: 0 }; }), total: 0, today: 0 });
-});
-
-// =============== BOOKINGS ===============
-
-app.post('/api/bookings', auth, function(req, res){
-  var checkinCode = 'OBG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-  var nights = 1;
-  if (req.body.checkIn && req.body.checkOut) {
-    var diff = new Date(req.body.checkOut) - new Date(req.body.checkIn);
-    if (diff > 0) nights = Math.max(1, Math.round(diff / 86400000));
-  }
-  var booking = {
-    id: makeId('OBU-HL-'),
-    customer_phone: req.user.phone,
-    hotel: String(req.body.hotel || '').slice(0, 80),
-    room: String(req.body.room || '').slice(0, 80),
-    check_in: req.body.checkIn || null,
-    check_out: req.body.checkOut || null,
-    nights: nights,
-    guests: Math.max(1, Number(req.body.guests || 1)),
-    total: Number(req.body.total || 0),
-    status: 'BOOKED',
-    checkin_code: checkinCode
-  };
-  if (pool) {
-    q("insert into bookings(id,customer_phone,hotel,room,check_in,check_out,nights,guests,total,status,checkin_code) values($1,$2,$3,$4,$5,$6,$7,$8,$9,'BOOKED',$10)",
-      [booking.id, booking.customer_phone, booking.hotel, booking.room, booking.check_in, booking.check_out, nights, booking.guests, booking.total, checkinCode])
-      .then(function(){ res.status(201).json(booking); });
-    return;
-  }
-  mem.bookings.set(booking.id, booking);
-  res.status(201).json(booking);
-});
-
-app.get('/api/bookings', auth, function(req, res){
-  if (pool) { q('select * from bookings where customer_phone=$1 order by created_at desc', [req.user.phone]).then(function(rows){ res.json(rows); }); return; }
-  var arr = [];
-  mem.bookings.forEach(function(v){ if (v.customer_phone === req.user.phone) arr.push(v); });
-  res.json(arr);
-});
-
-app.get('/api/bookings/:id/qr', auth, function(req, res){
-  var getBooking = pool ? q('select * from bookings where id=$1', [req.params.id]).then(function(r){ return r[0]; }) : Promise.resolve(mem.bookings.get(req.params.id));
-  getBooking.then(function(b){
-    if (!b) return res.status(404).json({ error: 'Not found' });
-    var token = jwt.sign({ t: 'checkin', id: b.id, code: b.checkin_code }, SIGNING_SECRET);
-    return QRCode.toDataURL(token, { width: 512, margin: 1 }).then(function(png){
-      res.json({ png: png, code: b.checkin_code, bookingId: b.id });
-    });
-  }).catch(function(e){ res.status(500).json({ error: e.message }); });
-});
-
-app.post('/api/portal/checkin', auth, roles('hotel','admin','superadmin'), function(req, res){
-  var raw = String(req.body.qr || '').trim();
-  var code = String(req.body.code || '').trim().toUpperCase();
-  var findBooking;
-  if (raw) {
-    var decoded;
-    try { decoded = jwt.verify(raw, SIGNING_SECRET); }
-    catch (e) { return res.status(400).json({ error: 'Invalid QR' }); }
-    if (decoded.t !== 'checkin') return res.status(400).json({ error: 'Not a check-in code' });
-    if (pool) findBooking = q('select * from bookings where id=$1 and checkin_code=$2', [decoded.id, decoded.code]).then(function(r){ return r[0]; });
-    else findBooking = Promise.resolve(mem.bookings.get(decoded.id));
-  } else if (code) {
-    if (pool) findBooking = q('select * from bookings where checkin_code=$1', [code]).then(function(r){ return r[0]; });
-    else findBooking = Promise.resolve(null);
-  } else {
-    return res.status(400).json({ error: 'Send qr or code' });
-  }
-  findBooking.then(function(b){
-    if (!b) return res.status(404).json({ error: 'Booking not found' });
-    if (b.status === 'CHECKED IN') return res.json({ ok: true, alreadyCheckedIn: true, booking: b });
-    if (pool) { q("update bookings set status='CHECKED IN', checked_in_at=now(), checked_in_by=$1, updated_at=now() where id=$2 returning *", [req.user.phone, b.id]).then(function(up){ res.json({ ok: true, booking: up[0] }); }); return; }
-    res.json({ ok: true, booking: b });
-  });
-});
-
-app.get('/api/portal/bookings', auth, roles('hotel','admin','superadmin'), function(req, res){
-  var hotel = req.user.role === 'hotel' ? String(req.query.hotel || '').trim() : '';
-  if (pool) {
-    if (hotel) { q('select * from bookings where hotel=$1 order by created_at desc limit 200', [hotel]).then(function(rows){ res.json(rows); }); return; }
-    q('select * from bookings order by created_at desc limit 200').then(function(rows){ res.json(rows); });
-    return;
-  }
-  var arr = [];
-  mem.bookings.forEach(function(b){ arr.push(b); });
-  if (hotel) arr = arr.filter(function(b){ return b.hotel === hotel; });
-  res.json(arr);
-});
-
-app.get('/api/portal/orders', auth, roles('vendor','admin','superadmin'), function(req, res){
-  if (req.user.role === 'vendor') {
-    var vendorName = String(req.query.vendor || '').trim();
-    if (pool) { q('select * from orders where vendor=$1 order by created_at desc limit 100', [vendorName]).then(function(rows){ res.json(rows); }); return; }
-    res.json([]);
-    return;
-  }
-  if (pool) { q('select * from orders order by created_at desc limit 200').then(function(rows){ res.json(rows); }); return; }
-  res.json([]);
-});
-
-// Static
-app.get('/payment-return', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'payment-return.html')); });
-app.get('/portal', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
-app.get('/portal.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'portal.html')); });
-app.get('/scan', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'scan.html')); });
-app.get('/scan.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'scan.html')); });
-app.get('/rider', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'rider.html')); });
-app.get('/rider.html', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'rider.html')); });
-app.get('*', function(req, res){ res.sendFile(path.join(__dirname, 'public', 'index.html')); });
-
-var httpServer = require('http').createServer(app);
-
-initDb().then(function(){
-  httpServer.listen(PORT, function(){ console.log('ObuasiGo listening on ' + PORT); });
-}).catch(function(e){
-  console.error('DB init failed', e);
-  process.exit(1);
-});
+app.get('/api/vendor/orders',auth,roles('vendor','admin','superadmin'),async(req,res)=>{let vendor=String(req.query.vendor||'');if(req.user.role==='vendor'){const p=await getRoleProfile(req.user.phone,'vendor');if(!p||p.status!=='approved')return res.status(403).json({error:'Vendor business is not approved'});vendor=p.business_name}else if(!vendor)vendor='';if(pool)return res.json(vendor?await q('select id,vendor,items,total,status,created_at,rider_phone,delivery_address from orders where vendor=$1 order by created_at desc limit 100',[vendor]):await q('select id,vendor,items,total,status,created_at,rider_phone,delivery_address from orders order by created_at desc limit 100'));res.json([...memory.orders.values()].filter(x=>!vendor||x.vendor===vendor).map(({customer_phone,...x})=>x)) });
+app.get('/api/hotel/bookings',auth,roles('hotel','admin','superadmin'),async(req,res)=>{let hotel=String(req.query.hotel||'');if(req.user.role==='hotel'){const p=await getRoleProfile(req.user.phone,'hotel');if(!p||p.status!=='approved')return res.status(403).json({error:'Hotel is not approved'});hotel=p.business_name}else if(!hotel)hotel='';if(pool)return res.json(hotel?await q('select id,hotel,room,total,status,created_at from bookings where hotel=$1 order by created_at desc limit 100',[hotel]):await q('select id,hotel,room,total,status,created_at from bookings order by created_at desc limit 100'));res.json([...memory.bookings.values()].filter(x=>!hotel||x.hotel===hotel).map(({customer_phone,...x})=>x)) });
+app.patch('/api/orders/:id/location',auth,roles('customer'),async(req,res)=>{const lat=Number(req.body.lat),lng=Number(req.body.lng);if(!Number.isFinite(lat)||!Number.isFinite(lng))return res.status(400).json({error:'Invalid location'});if(pool){const r=await q('update orders set delivery_lat=$1,delivery_lng=$2,delivery_address=$3,updated_at=now() where id=$4 and customer_phone=$5 returning *',[lat,lng,String(req.body.address||'').slice(0,240),req.params.id,req.user.phone]);if(!r[0])return res.status(404).json({error:'Order not found'});return res.json(r[0])}const o=memory.orders.get(req.params.id);if(!o||o.customer_phone!==req.user.phone)return res.status(404).json({error:'Order not found'});o.delivery_lat=lat;o.delivery_lng=lng;o.delivery_address=String(req.body.address||'').slice(0,240);res.json(o)});
+app.post('/api/orders/:id/feedback',auth,roles('customer'),async(req,res)=>{const rating=Number(req.body.rating),comment=String(req.body.comment||'').slice(0,500);if(!Number.isInteger(rating)||rating<1||rating>5)return res.status(400).json({error:'Rating must be 1 to 5'});if(pool){const o=(await q('select id,rider_phone,status from orders where id=$1 and customer_phone=$2',[req.params.id,req.user.phone]))[0];if(!o)return res.status(404).json({error:'Order not found'});if(!o.rider_phone)return res.status(400).json({error:'No rider is assigned yet'});const r=await q('insert into order_feedback(order_id,customer_phone,rider_phone,rating,comment) values($1,$2,$3,$4,$5) on conflict(order_id) do update set rating=$4,comment=$5 returning *',[o.id,req.user.phone,o.rider_phone,rating,comment]);await audit(req.user.phone,'order.feedback','order',o.id,{rating});return res.status(201).json(r[0])}const o=memory.orders.get(req.params.id);if(!o||o.customer_phone!==req.user.phone)return res.status(404).json({error:'Order not found'});if(!o.rider_phone)return res.status(400).json({error:'No rider is assigned yet'});const f={id:crypto.randomUUID(),order_id:o.id,customer_phone:req.user.phone,rider_phone:o.rider_phone,rating,comment,created_at:new Date().toISOString()};memory.feedback.set(o.id,f);res.status(201).json(f)});
+app.get('/api/rider/feedback',auth,roles('rider'),async(req,res)=>res.json(pool?await q('select order_id,rating,comment,created_at from order_feedback where rider_phone=$1 order by created_at desc',[req.user.phone]):[...memory.feedback.values()].filter(x=>x.rider_phone===req.user.phone).map(({order_id,rating,comment,created_at})=>({order_id,rating,comment,created_at}))));
+app.post('/api/tracking/:orderId',auth,async(req,res)=>{if(req.user.role!=='rider')return res.status(403).json({error:'Rider access required'});const lat=Number(req.body.lat),lng=Number(req.body.lng),accuracy=Number(req.body.accuracy||0);if(!Number.isFinite(lat)||!Number.isFinite(lng))return res.status(400).json({error:'Invalid coordinates'});const p={orderId:req.params.orderId,lat,lng,accuracy,at:new Date().toISOString()};if(pool)await q('insert into tracking_points(order_id,lat,lng,accuracy) values($1,$2,$3,$4)',[p.orderId,lat,lng,accuracy]);else memory.tracking.set(p.orderId,p);broadcast(p.orderId,{type:'location',...p});res.json({ok:true,p})});
+const sockets=new Map();let WebSocket;try{WebSocket=require('ws')}catch{}function broadcast(orderId,msg){for(const ws of sockets.get(orderId)||[])if(ws.readyState===1)ws.send(JSON.stringify(msg))}
+const httpServer=require('http').createServer(app);if(WebSocket){const wss=new WebSocket.Server({server:httpServer,path:'/ws'});wss.on('connection',(ws,req)=>{const u=new URL(req.url,'http://localhost');const orderId=u.searchParams.get('orderId'),token=u.searchParams.get('token');let claims;try{claims=jwt.verify(token||'',SIGNING_SECRET)}catch{return ws.close(1008,'Unauthorized')}if(!orderId)return ws.close(1008,'Order required');if(!sockets.has(orderId))sockets.set(orderId,new Set());sockets.get(orderId).add(ws);ws.on('close',()=>sockets.get(orderId)?.delete(ws));ws.send(JSON.stringify({type:'connected',orderId}))})}
+const vapidReady=!!(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY&&process.env.VAPID_SUBJECT);if(vapidReady)webpush.setVapidDetails(process.env.VAPID_SUBJECT,process.env.VAPID_PUBLIC_KEY,process.env.VAPID_PRIVATE_KEY);
+app.get('/api/push/public-key',(req,res)=>res.json({configured:vapidReady,publicKey:vapidReady?process.env.VAPID_PUBLIC_KEY:null}));app.post('/api/push/subscribe',auth,async(req,res)=>{if(!vapidReady)return res.status(503).json({error:'Push not configured'});const sub=req.body.subscription;if(!sub?.endpoint)return res.status(400).json({error:'Invalid subscription'});if(pool)await q('insert into push_subscriptions(user_phone,endpoint,subscription) values($1,$2,$3) on conflict(endpoint) do update set subscription=$3,user_phone=$1',[req.user.phone,sub.endpoint,JSON.stringify(sub)]);else memory.push.set(sub.endpoint,{phone:req.user.phone,subscription:sub});res.json({ok:true})});
+app.post('/api/push/send',auth,admin,async(req,res)=>{if(!vapidReady)return res.status(503).json({error:'Push not configured'});let subs=pool?await q('select * from push_subscriptions where user_phone=$1',[req.body.phone]):[...memory.push.values()].filter(x=>x.phone===req.body.phone);for(const s of subs){const sub=s.subscription||s;try{await webpush.sendNotification(sub,JSON.stringify({title:req.body.title||'ObuasiGo',body:req.body.body||'You have an update'}))}catch(e){console.error('push',e.message)}}res.json({ok:true})});
+app.post('/api/documents',auth,upload.single('document'),async(req,res)=>{if(!req.file)return res.status(400).json({error:'Document file required'});const allowed=['image/jpeg','image/png','application/pdf'];if(!allowed.includes(req.file.mimetype))return res.status(400).json({error:'Only JPG, PNG or PDF allowed'});let url=null;if(process.env.SUPABASE_URL&&process.env.SUPABASE_SERVICE_ROLE_KEY&&process.env.SUPABASE_STORAGE_BUCKET){const {createClient}=require('@supabase/supabase-js');const sb=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY);const filePath=`documents/${req.user.phone.replace(/\W/g,'_')}/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await sb.storage.from(process.env.SUPABASE_STORAGE_BUCKET).upload(filePath,req.file.buffer,{contentType:req.file.mimetype,upsert:false});if(up.error)return res.status(502).json({error:'Document storage failed'});url=up.data.path}const type=String(req.body.type||'identity').slice(0,40);if(!['identity','ghana_card','ghana_card_front','ghana_card_back','driver_license','vehicle','vehicle_registration','vehicle_insurance','selfie','business_registration','food_license','hotel_license','proof_of_address'].includes(type))return res.status(400).json({error:'Invalid document type'});if(pool){const r=await q('insert into documents(user_phone,doc_type,file_url) values($1,$2,$3) returning *',[req.user.phone,type,url]);return res.status(201).json(r[0])}const d={id:crypto.randomUUID(),user_phone:req.user.phone,doc_type:type,file_url:url,status:'pending'};memory.documents.set(d.id,d);res.status(201).json(d)});
+app.get('/api/admin/orders',auth,admin,async(req,res)=>res.json(pool?await q('select id,vendor,total,status,rider_phone,created_at,delivery_lat,delivery_lng,delivery_address from orders order by created_at desc limit 100'):[...memory.orders.values()].map(({customer_phone,...x})=>x)));
+app.get('/api/admin/bookings',auth,admin,async(req,res)=>res.json(pool?await q('select id,hotel,room,total,status,customer_phone,created_at from bookings order by created_at desc limit 100'):[...memory.bookings.values()].map(({customer_phone,...x})=>x)));
+app.get('/api/admin/feedback',auth,admin,async(req,res)=>res.json(pool?await q('select order_id,rider_phone,rating,comment,created_at from order_feedback order by created_at desc limit 100'):[...memory.feedback.values()].map(({customer_phone,...x})=>x)));
+app.get('/api/admin/overview',auth,admin,async(req,res)=>{if(pool){const [[customers],[riders],[vendors],[hotels],[orders],[bookings],[pending]] = await Promise.all([q("select count(*) n from users where role='customer'"),q("select count(*) n from users where role='rider'"),q("select count(*) n from users where role='vendor'"),q("select count(*) n from users where role='hotel'"),q('select count(*) n from orders'),q('select count(*) n from bookings'),q("select count(*) n from documents where status='pending'")]);return res.json({customers:+customers[0].n,riders:+riders[0].n,vendors:+vendors[0].n,hotels:+hotels[0].n,orders:+orders[0].n,bookings:+bookings[0].n,pendingDocuments:+pending[0].n})}res.json({customers:memory.users.size,riders:0,vendors:0,hotels:0,orders:memory.orders.size,bookings:memory.bookings.size,pendingDocuments:memory.documents.size})});
+app.get('/api/admin/documents',auth,admin,async(req,res)=>res.json(pool?await q("select * from documents where status='pending' order by created_at asc"):Array.from(memory.documents.values()).filter(x=>x.status==='pending')));
+app.patch('/api/admin/documents/:id',auth,admin,async(req,res)=>{if(pool){const r=await q('update documents set status=$1 where id=$2 returning *',[req.body.status,req.params.id]);if(!r[0])return res.status(404).json({error:'Document not found'});return res.json(r[0])}const d=memory.documents.get(req.params.id);if(!d)return res.status(404).json({error:'Document not found'});d.status=req.body.status;res.json(d)});
+app.get('/payment-return',(req,res)=>res.sendFile(path.join(__dirname,'public','payment-return.html')));
+app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+initDb().then(()=>httpServer.listen(PORT,()=>console.log(`ObuasiGo running on ${PORT}`))).catch(e=>{console.error('DB init failed',e);process.exit(1)});
