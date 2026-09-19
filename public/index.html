@@ -251,4 +251,139 @@ window.addEventListener('resize',drawGraph);$('mainSearch').addEventListener('ke
 /* Show sneak peek on first visit */
 window.addEventListener('load',()=>{setTimeout(()=>{if(!localStorage.getItem('obuasigo_seen_preview')){localStorage.setItem('obuasigo_seen_preview','1');openPreview()}else if(token){refreshAccountLabel()}},900)});
 async function refreshAccountLabel(){const r=await api('/api/me');if(r.ok&&r.data.user){user=r.data.user;updateAccount()}}
-</script><script>if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));</script></body></html>
+</script><script>if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));</script><script>
+/* ============================================================
+   ROLE SEPARATION
+   Each role sees ONLY its own dashboard.
+   - Vendors cannot see hotel bookings, food orders of others,
+     rider view or admin view.
+   - Hotels cannot see food orders, vendor view, rider view or admin.
+   - Riders see only the rider view.
+   - Admin is standalone at /admin.html
+   - After sign-in, the user is auto-redirected to their own screen.
+============================================================ */
+(function(){
+  'use strict';
+  var CURRENT_ROLE = null;
+
+  function t(msg){
+    if (typeof window.toast === 'function') window.toast(msg);
+  }
+
+  function roleOf(){ return CURRENT_ROLE || 'guest'; }
+
+  /* Which roles can see which screens */
+  function allowed(role, target){
+    if (target === 'customer') return true;
+    if (role === 'superadmin') return true;
+    if (role === target) return true;
+    if (role === 'admin' && target === 'admin') return true;
+    return false;
+  }
+
+  /* Load the correct dashboard pieces for the current role */
+  function loadFor(role){
+    if (role === 'vendor' && typeof window.loadVendor === 'function') window.loadVendor();
+    if (role === 'hotel' && typeof window.loadHotel === 'function') window.loadHotel();
+    if (role === 'rider' && typeof window.loadRider === 'function') window.loadRider();
+  }
+
+  /* Show exactly one role screen */
+  function showOnly(target){
+    document.querySelectorAll('.role-screen').forEach(function(el){ el.classList.remove('active'); });
+    var el = document.getElementById(target + 'Screen');
+    if (el) el.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    loadFor(target);
+  }
+
+  /* Override the global showRole so unauthorised switches are blocked */
+  var _origShowRole = window.showRole;
+  window.showRole = function(target){
+    if (!allowed(roleOf(), target)){
+      if (target === 'admin'){
+        t('Admin area is protected. Sign in with an admin account.');
+        return;
+      }
+      t('This dashboard is only for ' + target + ' accounts.');
+      return;
+    }
+    showOnly(target);
+  };
+
+  /* Rewrite the customer home service buttons so they open registration
+     instead of switching dashboards */
+  function fixServiceButtons(){
+    var grid = document.querySelector('#customerScreen .service-grid');
+    if (!grid) return;
+    grid.innerHTML =
+      '<button class="service" onclick="quickSearch(\'food\')"><div class="ico">🍽️</div>Food</button>'
+      + '<button class="service" onclick="quickSearch(\'restaurant\')"><div class="ico">🏪</div>Restaurants</button>'
+      + '<button class="service" onclick="quickSearch(\'hotel\')"><div class="ico">🏨</div>Hotels</button>'
+      + '<button class="service" onclick="openRegistration(\'rider\')"><div class="ico">🛵</div>Become Rider</button>'
+      + '<button class="service" onclick="openRegistration(\'vendor\')"><div class="ico">🛍️</div>Become Vendor</button>'
+      + '<button class="service" onclick="openRegistration(\'hotel\')"><div class="ico">🏨</div>Become Partner</button>';
+  }
+
+  /* Override verifyOtp so after sign-in we route them to the right place */
+  var _origVerifyOtp = window.verifyOtp;
+  window.verifyOtp = async function(){
+    var p = window._obgLoginPhone || (document.getElementById('loginPhone') ? document.getElementById('loginPhone').value.trim() : '');
+    var c = document.getElementById('loginOtp') ? document.getElementById('loginOtp').value.trim() : '';
+    if (!p || !c) return t('Enter the OTP');
+    var refField = document.getElementById('referralInput');
+    var ref = (refField && refField.value.trim()) || '';
+    try {
+      var r = await api('/api/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: p, code: c, referralCode: ref }) });
+      if (!r.ok) return t(r.data.error || 'Verification failed');
+      token = r.data.token;
+      user = r.data.user;
+      localStorage.setItem('obuasigo_token', token);
+      CURRENT_ROLE = user.role || 'customer';
+      if (typeof window.updateAccount === 'function') window.updateAccount();
+      if (typeof window.showWelcomeScreen === 'function') window.showWelcomeScreen(user);
+      /* Auto-redirect after the welcome screen */
+      setTimeout(function(){
+        if (user.role === 'admin' || user.role === 'superadmin'){
+          location.href = '/admin.html';
+          return;
+        }
+        if (user.role === 'vendor' || user.role === 'rider' || user.role === 'hotel'){
+          location.reload();
+          return;
+        }
+        location.reload();
+      }, 2500);
+    } catch(e){
+      t('Network error');
+    }
+  };
+
+  /* On startup, detect the signed-in role and lock the correct screen */
+  window.addEventListener('load', function(){
+    var tk = localStorage.getItem('obuasigo_token');
+    if (!tk){ CURRENT_ROLE = 'guest'; fixServiceButtons(); return; }
+    fetch('/api/me', { headers: { Authorization: 'Bearer ' + tk } })
+      .then(function(x){ return x.json(); })
+      .then(function(d){
+        if (!d || !d.user){ CURRENT_ROLE = 'guest'; return; }
+        CURRENT_ROLE = d.user.role || 'customer';
+        if (CURRENT_ROLE === 'vendor' || CURRENT_ROLE === 'hotel' || CURRENT_ROLE === 'rider'){
+          setTimeout(function(){
+            showOnly(CURRENT_ROLE);
+          }, 700);
+        } else if (CURRENT_ROLE === 'admin' || CURRENT_ROLE === 'superadmin'){
+          /* Keep them on the customer preview here; they use /admin.html for real work */
+          CURRENT_ROLE = 'customer';
+        }
+        fixServiceButtons();
+      })
+      .catch(function(){ CURRENT_ROLE = 'guest'; fixServiceButtons(); });
+  });
+
+  /* Run once shortly after page load too, in case load event already fired */
+  if (document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(fixServiceButtons, 400);
+  }
+})();
+</script></body></html>
