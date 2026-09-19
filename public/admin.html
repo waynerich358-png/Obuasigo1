@@ -34,6 +34,49 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,
 @media(max-width:900px){.stats{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}}
 @media(max-width:520px){.stats{grid-template-columns:1fr 1fr}.hero h1{font-size:26px}.hero{flex-direction:column;align-items:flex-start;gap:12px}}
 </style></head><body>
+  <!-- ═══════════ OBUASIGO SPLASH SCREEN ═══════════ -->
+<style>
+#obg-splash{position:fixed;inset:0;z-index:99999;background:radial-gradient(circle at 50% 45%,#10bd6c 0%,#08964f 40%,#076c39 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;transition:opacity .7s ease}
+#obg-splash.hide{opacity:0;pointer-events:none}
+#obg-splash::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.15) 0,transparent 55%);pointer-events:none}
+#obg-splash .sp-icon{width:118px;height:118px;border-radius:28px;background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(255,255,255,.08));display:flex;align-items:center;justify-content:center;box-shadow:0 24px 60px rgba(0,0,0,.35),inset 0 0 0 1.5px rgba(255,255,255,.2);margin-bottom:28px;animation:sp-pop .8s cubic-bezier(.22,.9,.3,1.25) both;position:relative;z-index:1}
+#obg-splash .sp-icon img{width:86px;height:86px;border-radius:22px;display:block}
+#obg-splash .sp-icon .sp-emoji{font-size:52px}
+#obg-splash .sp-brand{font-size:40px;font-weight:900;letter-spacing:-1px;line-height:1;animation:sp-fade .9s .12s both;position:relative;z-index:1}
+#obg-splash .sp-brand span{color:#e7ae24}
+#obg-splash .sp-tag{margin-top:14px;font-size:12px;letter-spacing:.34em;color:#cdf3de;font-weight:800;text-transform:uppercase;animation:sp-fade 1s .28s both;position:relative;z-index:1}
+#obg-splash .sp-dots{margin-top:38px;display:flex;gap:8px;animation:sp-fade 1s .45s both;position:relative;z-index:1}
+#obg-splash .sp-dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.6);animation:sp-bounce 1.3s infinite ease-in-out}
+#obg-splash .sp-dots i:nth-child(2){animation-delay:.15s}
+#obg-splash .sp-dots i:nth-child(3){animation-delay:.3s}
+@keyframes sp-pop{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:scale(1)}}
+@keyframes sp-fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes sp-bounce{0%,100%{transform:translateY(0);opacity:.55}50%{transform:translateY(-7px);opacity:1}}
+</style>
+<div id="obg-splash">
+  <div class="sp-icon">
+    <img src="/obuasigo-icon.png" alt="ObuasiGo" onerror="this.outerHTML='<div class=&quot;sp-emoji&quot;>🛵</div>'">
+  </div>
+  <div class="sp-brand">Obuasi<span>Go</span></div>
+  <div class="sp-tag">Obuasi at your fingertips</div>
+  <div class="sp-dots"><i></i><i></i><i></i></div>
+</div>
+<script>
+(function(){
+  var s = document.getElementById('obg-splash');
+  if (!s) return;
+  function hide(){
+    s.classList.add('hide');
+    setTimeout(function(){ if (s.parentNode) s.parentNode.removeChild(s); }, 750);
+  }
+  if (document.readyState === 'complete') { setTimeout(hide, 1400); }
+  else {
+    window.addEventListener('load', function(){ setTimeout(hide, 1400); });
+    setTimeout(hide, 3000);
+  }
+})();
+</script>
+<!-- ═══════════ END SPLASH ═══════════ -->
 
 <header class="top">
   <img src="/obuasigo-icon.png" onerror="this.style.display='none'">
