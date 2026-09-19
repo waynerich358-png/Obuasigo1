@@ -136,7 +136,49 @@ async function flw(pathname,body){const r=await fetch('https://api.flutterwave.c
 app.post('/api/payments/checkout',auth,async(req,res)=>{if(!process.env.FLW_SECRET_KEY)return res.status(503).json({error:'Flutterwave is not configured'});const amount=Number(req.body.amount);if(!(amount>0))return res.status(400).json({error:'Invalid amount'});const tx_ref='OBG-'+Date.now()+'-'+crypto.randomBytes(3).toString('hex');const base=process.env.APP_URL||`${req.protocol}://${req.get('host')}`;try{const d=await flw('/payments',{tx_ref,amount,currency:'GHS',redirect_url:`${base}/payment-return`,customer:{email:req.body.email||`${req.user.phone.replace('+','')}@obuasigo.app`,name:req.body.name||'ObuasiGo Customer',phonenumber:req.user.phone},payment_options:'card,ghanamobilemoney',customizations:{title:'ObuasiGo',description:req.body.description||'ObuasiGo order payment'},meta:{entity_type:req.body.entityType||'order',entity_id:req.body.entityId||''}});if(pool)await q('insert into payments(tx_ref,user_phone,entity_type,entity_id,amount,currency,status) values($1,$2,$3,$4,$5,$6,$7)',[tx_ref,req.user.phone,req.body.entityType||'order',req.body.entityId||'',amount,'GHS','pending']);else memory.payments.set(tx_ref,{tx_ref,user_phone:req.user.phone,amount,status:'pending'});res.json({ok:true,tx_ref,link:d.data?.link})}catch(e){res.status(502).json({error:e.message})}});
 app.get('/api/payments/verify/:transactionId',auth,async(req,res)=>{if(!process.env.FLW_SECRET_KEY)return res.status(503).json({error:'Flutterwave is not configured'});try{const r=await fetch(`https://api.flutterwave.com/v3/transactions/${encodeURIComponent(req.params.transactionId)}/verify`,{headers:{Authorization:'Bearer '+process.env.FLW_SECRET_KEY}});const d=await r.json();res.status(r.ok?200:502).json(d)}catch(e){res.status(502).json({error:e.message})}});
 app.post('/api/webhooks/flutterwave',async(req,res)=>{const hash=req.headers['verif-hash'];if(!process.env.FLW_SECRET_HASH||hash!==process.env.FLW_SECRET_HASH)return res.status(401).end();const body=req.body||{};const tx=body.data||body;const ref=tx.tx_ref;if(ref){if(pool){await q('update payments set status=$1,transaction_id=$2 where tx_ref=$3',[tx.status||'completed',String(tx.id||''),ref]);const pay=(await q('select entity_type,entity_id,status from payments where tx_ref=$1',[ref]))[0];if(pay?.entity_type==='order'&&pay.entity_id&&String(tx.status||'').toLowerCase()==='successful'){await q("update orders set status='Payment confirmed',updated_at=now() where id=$1",[pay.entity_id]);const order=(await q('select customer_phone from orders where id=$1',[pay.entity_id]))[0];if(order?.customer_phone)await qualifyReferralForUser(order.customer_phone)}}else if(memory.payments.has(ref)){const pay=memory.payments.get(ref);pay.status=tx.status||'completed';if(pay.entity_type==='order'&&pay.entity_id&&String(tx.status||'').toLowerCase()==='successful'){const o=memory.orders.get(pay.entity_id);if(o){o.status='Payment confirmed';await qualifyReferralForUser(o.customer_phone)}}}}res.json({ok:true})});
-app.get('/api/rider/dashboard',auth,roles('rider'),async(req,res)=>{let orders=pool?await q('select * from orders where rider_phone=$1 order by updated_at desc limit 50',[req.user.phone]):[...memory.orders.values()].filter(x=>x.rider_phone===req.user.phone);let feedback=pool?await q('select * from order_feedback where rider_phone=$1 order by created_at desc limit 20',[req.user.phone]):[...memory.feedback.values()].filter(x=>x.rider_phone===req.user.phone);const earnings=orders.filter(x=>['Delivered','COMPLETED','Delivered to customer'].includes(x.status)).map(x=>Number(x.total||0)*0.15);res.json({orders,feedback,earnings,summary:{today:earnings.slice(-7).reduce((a,b)=>a+b,0),deliveries:orders.length,averageRating:feedback.length?feedback.reduce((a,b)=>a+b.rating,0)/feedback.length:0}})});
+
+/* ============================================================
+   RIDER DASHBOARD — FIXED
+   Returns assigned, completed, earningsTotal, today, averageRating
+   so the rider UI never shows "undefined" again.
+============================================================ */
+app.get('/api/rider/dashboard',auth,roles('rider'),async(req,res)=>{
+  try {
+    let orders = pool
+      ? await q('select * from orders where rider_phone=$1 order by updated_at desc limit 50',[req.user.phone])
+      : [...memory.orders.values()].filter(x=>x.rider_phone===req.user.phone);
+    let feedback = pool
+      ? await q('select * from order_feedback where rider_phone=$1 order by created_at desc limit 20',[req.user.phone])
+      : [...memory.feedback.values()].filter(x=>x.rider_phone===req.user.phone);
+
+    const doneStatuses = ['Delivered','COMPLETED','Delivered to customer','Completed'];
+    const completedOrders = orders.filter(function(x){ return doneStatuses.indexOf(x.status) !== -1; });
+    const activeOrders = orders.filter(function(x){ return doneStatuses.indexOf(x.status) === -1; });
+
+    const earnings = completedOrders.map(function(x){ return Number(x.total||0) * 0.15; });
+    const todayEarnings = earnings.length ? earnings.slice(-7).reduce(function(a,b){ return a+b; },0) : 0;
+    const avgRating = feedback.length ? feedback.reduce(function(a,b){ return a + b.rating; },0) / feedback.length : 0;
+    const totalEarned = earnings.reduce(function(a,b){ return a+b; },0);
+
+    res.json({
+      orders: orders,
+      feedback: feedback,
+      earnings: earnings,
+      summary: {
+        today: todayEarnings,
+        deliveries: orders.length,
+        averageRating: avgRating,
+        assigned: activeOrders.length,
+        completed: completedOrders.length,
+        earningsTotal: totalEarned
+      }
+    });
+  } catch(e) {
+    console.error('rider dashboard error', e.message);
+    res.status(500).json({ error: 'Could not load rider dashboard' });
+  }
+});
+
 app.get('/api/search',async(req,res)=>{try{const data=await searchCatalog(req.query.q||'',req.query.type||'all');res.json({ok:true,results:data})}catch(e){res.status(500).json({error:'Search failed'})}});
 
 app.post('/api/partner/apply',auth,async(req,res)=>{
@@ -189,6 +231,7 @@ app.post('/api/documents',auth,upload.single('document'),async(req,res)=>{if(!re
 app.get('/api/admin/orders',auth,admin,async(req,res)=>res.json(pool?await q('select id,vendor,total,status,rider_phone,created_at,delivery_lat,delivery_lng,delivery_address from orders order by created_at desc limit 100'):[...memory.orders.values()].map(({customer_phone,...x})=>x)));
 app.get('/api/admin/bookings',auth,admin,async(req,res)=>res.json(pool?await q('select id,hotel,room,total,status,customer_phone,created_at from bookings order by created_at desc limit 100'):[...memory.bookings.values()].map(({customer_phone,...x})=>x)));
 app.get('/api/admin/feedback',auth,admin,async(req,res)=>res.json(pool?await q('select order_id,rider_phone,rating,comment,created_at from order_feedback order by created_at desc limit 100'):[...memory.feedback.values()].map(({customer_phone,...x})=>x)));
+
 app.get('/api/admin/overview',auth,admin,async(req,res)=>{
   try {
     if(pool){
@@ -201,7 +244,7 @@ app.get('/api/admin/overview',auth,admin,async(req,res)=>{
         q("select count(*) n from bookings"),
         q("select count(*) n from documents where status='pending'")
       ]);
-      const safe = (arr) => (arr && arr[0] && typeof arr[0].n !== 'undefined') ? Number(arr[0].n) : 0;
+      const safe = function(arr){ return (arr && arr[0] && typeof arr[0].n !== 'undefined') ? Number(arr[0].n) : 0; };
       return res.json({
         customers: safe(r[0]),
         riders: safe(r[1]),
@@ -226,6 +269,7 @@ app.get('/api/admin/overview',auth,admin,async(req,res)=>{
     res.status(500).json({ error: 'Could not load overview' });
   }
 });
+
 app.get('/api/admin/documents',auth,admin,async(req,res)=>res.json(pool?await q("select * from documents where status='pending' order by created_at asc"):Array.from(memory.documents.values()).filter(x=>x.status==='pending')));
 app.patch('/api/admin/documents/:id',auth,admin,async(req,res)=>{if(pool){const r=await q('update documents set status=$1 where id=$2 returning *',[req.body.status,req.params.id]);if(!r[0])return res.status(404).json({error:'Document not found'});return res.json(r[0])}const d=memory.documents.get(req.params.id);if(!d)return res.status(404).json({error:'Document not found'});d.status=req.body.status;res.json(d)});
 app.get('/payment-return',(req,res)=>res.sendFile(path.join(__dirname,'public','payment-return.html')));
