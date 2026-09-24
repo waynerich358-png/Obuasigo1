@@ -1,66 +1,35 @@
-# ObuasiGo — Advanced Role-Based MVP
+# ObuasiGo — Professional Role-Based App
 
-ObuasiGo is a multi-service marketplace for **food, local vendors, hotel bookings and delivery in Obuasi**.
+ObuasiGo is a connected multi-service marketplace for food, vendors, hotels, delivery and customer bookings.
 
-## Interfaces included
+## Separate websites / portals
 
-- **Customer** — search, food ordering, floating cart, checkout, location, orders, hotel booking and QR check-in.
-- **Rider** — separate rider dashboard, online/offline mode, delivery requests, earnings, customer feedback and rider registration.
-- **Vendor** — vendor-only operations dashboard, own orders, menu/catalog management and business registration.
-- **Hotel** — hotel-only booking dashboard, room management, hotel registration and QR check-in.
-- **Admin** — protected admin dashboard for applications, documents, users, orders, bookings and verification.
+The same server powers separate role websites:
 
-## Search fix
+- Customer: `/`
+- Rider: `/rider`
+- Vendor: `/vendor`
+- Hotel: `/hotel`
+- Owner/Admin: `/admin`
+- Admin access request: `/admin-request.html`
 
-The search bar now calls `GET /api/search` and searches the built-in catalogue plus approved vendor/hotel catalogues stored in PostgreSQL. It supports partial words and multi-word searches such as:
+Each portal uses server-side authentication and permissions. A vendor cannot use the hotel portal's protected APIs, a hotel cannot see another hotel's bookings, and a rider cannot access customer/vendor/admin operations.
 
-- `jollof`
-- `jollof chicken`
-- `pizza`
-- `chicken`
-- `drink`
-- `hotel`
-- `hotel room`
-- a registered vendor/hotel name
-- a registered menu item or room name
+## Jessica owner administration
 
-Search results can add food to the cart or start a hotel booking.
+Jessica is the configured owner name. The actual owner/admin phone is configured in `ADMIN_PHONES` in `.env`.
 
-## Partner registration
-
-After phone/OTP sign-in, a user can submit a partner application.
-
-### Vendor
-
-Collects legal name, Ghana Card number, business name, business phone, email, address, registration/licence number, description and supporting documents. An initial menu item can be added. Further menu items are added from the vendor dashboard.
-
-### Rider
-
-Collects legal name, Ghana Card number, rider/driver licence number, vehicle type, number plate, address and emergency contact. Supporting documents include Ghana Card, licence, vehicle registration/ownership proof and profile/selfie photo.
-
-### Hotel
-
-Collects legal name, Ghana Card number, hotel name, business phone, email, address, registration/licence number and description. Supporting documents include Ghana Card, business registration, hotel licence/operating document where applicable and proof of address where requested. Rooms can be added after approval.
-
-### Admin
-
-Admin access is **not self-granted**. A signed-in user may submit an admin access request with Ghana Card information and a reason. An existing authorized admin must approve it before the user's server-side role becomes `admin`.
-
-## Security model
-
-Role restrictions are enforced on the server. Hiding a button is not treated as security.
-
-- Vendor accounts can only load their own vendor operations.
-- Hotel accounts can only load their own hotel bookings.
-- Rider/customer/vendor/hotel/admin APIs use server-side role checks.
-- Payment and OTP secrets stay on the server.
-- Identity documents are submitted to the protected document endpoint; configure Supabase Storage for persistent private storage.
-- Admin approval is required for partner roles.
-
-## Run locally
+For local Termux testing, run:
 
 ```bash
-npm install
+./setup-termux.sh
+```
+
+It asks for Jessica's phone, creates a strong local JWT secret, enables development OTP, and installs dependencies.
+
+Then:
+
+```bash
 npm start
 ```
 
@@ -70,51 +39,115 @@ Open:
 http://localhost:10000
 ```
 
-For a quick development test without Twilio, set:
+Owner admin:
 
 ```text
-DEV_OTP=true
+http://localhost:10000/admin
 ```
 
-The server will show the development OTP in its terminal. Do not use development OTP mode in production.
+Vendor portal:
+
+```text
+http://localhost:10000/vendor
+```
+
+Hotel portal:
+
+```text
+http://localhost:10000/hotel
+```
+
+Rider portal:
+
+```text
+http://localhost:10000/rider
+```
+
+## Termux manual setup
+
+```bash
+pkg update && pkg upgrade -y
+pkg install nodejs-lts unzip -y
+termux-setup-storage
+cd ~/storage/downloads
+unzip ObuasiGo_Professional_Real_App_Jessica_Termux.zip
+cd ObuasiGo_Professional_Real_App_Jessica_Termux
+./setup-termux.sh
+npm start
+```
+
+The current package supports Node 20+ and works with current Termux Node LTS releases. If `setup-termux.sh` is used, do not paste any secret keys into chat.
+
+## Connected business workflow
+
+```text
+CUSTOMER APP
+    |
+    +---- Food / Shopping ----> VENDOR WEBSITE ----+
+    |                                                |
+    +---- Hotel booking -------> HOTEL WEBSITE -----+----> JESSICA OWNER ADMIN
+    |                                                |
+    +---- Delivery ------------> RIDER WEBSITE -----+
+    |
+    +---- Invite Friend / Search / Checkout
+```
+
+### Vendor
+
+A vendor can register from `/vendor` using phone OTP, legal name, Ghana Card information, business information and supporting documents. Jessica reviews the application. After approval the vendor gets its own protected dashboard, manages its own menu and sees only its own operational orders.
+
+### Hotel
+
+A hotel can register from `/hotel` using phone OTP, legal name, Ghana Card information, hotel/business information and supporting documents. After approval the hotel receives its own protected dashboard, manages rooms, views its own bookings and verifies guest check-in QR tokens.
+
+### Rider
+
+A rider can register from `/rider` using phone OTP, Ghana Card, rider/driver licence, vehicle type, number plate, address and supporting documents. After approval the rider gets the separate rider dashboard, delivery workflow, earnings and customer feedback.
+
+### Owner/Admin
+
+Jessica's `/admin` dashboard is the central control point for partner applications, partner status, documents, orders, hotel bookings, rider feedback, statistics and admin access requests.
+
+Other staff can submit `/admin-request.html`; an existing authorized admin must approve the request before the account becomes an admin.
+
+## Search
+
+Customer search uses `/api/search` and searches the built-in catalogue plus approved vendor/hotel catalogues. Partial and multi-word searches are supported, including `jollof`, `jollof chicken`, `pizza`, `drink`, `hotel`, room names and registered business names.
+
+## Invite a friend
+
+Customers have a unique invite code, share link, QR code and share actions. The referral is linked at OTP sign-in and becomes qualified after the invited customer completes a successful paid order.
+
+## Documents
+
+The app accepts JPG, PNG and PDF identity/business documents through the protected `/api/documents` endpoint. For persistent private document storage, configure Supabase Storage. Do not put Supabase service-role keys in frontend code.
 
 ## Production services
 
-Configure PostgreSQL/Supabase, Twilio Verify, Flutterwave and Supabase Storage using `.env.example`.
+For real launch, configure:
 
-Minimum production secrets:
+- PostgreSQL / Supabase
+- Twilio Verify for OTP
+- Flutterwave for payments
+- Supabase private storage for documents
+- Web Push/VAPID if push notifications are required
 
-```text
-JWT_SECRET
-DATABASE_URL
-TWILIO_ACCOUNT_SID
-TWILIO_AUTH_TOKEN
-TWILIO_VERIFY_SERVICE_SID
-FLW_SECRET_KEY
-FLW_SECRET_HASH
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-SUPABASE_STORAGE_BUCKET
-ADMIN_PHONES
-ALLOWED_ORIGINS
-APP_URL
+Production environment variables are listed in `.env.example`.
+
+Never commit `.env` or server secrets to GitHub.
+
+## Important production note
+
+This is a real connected application codebase/MVP, but production use still requires testing the actual payment provider, OTP service, database, private document storage, identity/business verification procedures and operational policies before accepting real money or identity documents.
+
+## Publication hardening added from the launch checklist
+
+This release adds privacy, terms, refund and cookie pages; optional analytics consent; production HTTPS redirect; custom 404; robots.txt; dynamic sitemap; security.txt template; social preview image; compressed WebP UI assets; favicon/PWA icon; accessible focus states; reduced-motion support; a clear customer CTA; basic honeypot spam protection; and a static launch audit.
+
+Run:
+
+```bash
+npm run launch:audit
 ```
 
-Never place these secrets in the frontend or commit them to GitHub.
-
-## Important
-
-This is an advanced application codebase/MVP. Before accepting real money or identity documents in production, connect and test the real PostgreSQL, Twilio, Flutterwave and private document-storage services and complete operational/legal verification for the businesses and documents you choose to require.
-
-
-## Invite your friends
-The customer app now includes a working referral/invite flow:
-- Each customer receives a unique ObuasiGo invite code and shareable link.
-- The link can be shared with the device share sheet, WhatsApp, SMS, or copied.
-- A QR code is generated for the invite link.
-- Opening an invite link stores the referral code before sign-in.
-- The referral is linked when the invited customer completes OTP sign-in.
-- The API tracks joined and qualified referrals. A referral becomes qualified after the invited customer completes a successfully paid order.
-- Referral data is stored server-side in PostgreSQL when `DATABASE_URL` is configured, with an in-memory fallback for local testing.
-
-Referral API endpoints: `/api/referrals/me` and `/api/referrals/claim`.
+See `LAUNCH_CHECKLIST.md` and `PUBLISHING.md` before accepting real customers, payments or identity documents.

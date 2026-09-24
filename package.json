@@ -1,10 +1,11 @@
 {
   "name": "obuasigo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "launch:audit": "node launch-audit.js"
   },
   "dependencies": {
     "express": "^4.21.2",
@@ -22,6 +23,6 @@
     "qrcode": "^1.5.4"
   },
   "engines": {
-    "node": ">=24.14.1 <25"
+    "node": ">=20 <25"
   }
 }
