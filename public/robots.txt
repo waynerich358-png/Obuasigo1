@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin-request.html
+Disallow: /vendor
+Disallow: /hotel
+Disallow: /rider
+Disallow: /api/
+Sitemap: https://REPLACE-WITH-YOUR-DOMAIN/sitemap.xml

@@ -1,0 +1,3 @@
+Contact: REPLACE-WITH-YOUR-SECURITY-CONTACT
+Preferred-Languages: en
+Policy: /privacy
